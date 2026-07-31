@@ -1,3 +1,6 @@
 qiskit==2.5.1
 qiskit-optimization==0.7.0
 dwave-system==1.35.0
+
+# dev requirements
+reno~=4.0
