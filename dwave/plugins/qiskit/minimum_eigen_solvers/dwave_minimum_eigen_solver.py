@@ -13,22 +13,23 @@
 # limitations under the License.
 
 import logging
-from typing import List, Optional, Union, Dict
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
-import numpy as np
 import dimod
 from dwave.system import DWaveSampler, AutoEmbeddingComposite
 
-from qiskit.aqua.operators import OperatorBase, LegacyBaseOperator, StateFn
-from qiskit.aqua.algorithms import MinimumEigensolver, MinimumEigensolverResult
-from qiskit.optimization.problems import QuadraticProgram
+from qiskit.quantum_info.operators.base_operator import BaseOperator
+from qiskit.result import QuasiDistribution
+from qiskit_optimization.problems import QuadraticProgram
+from qiskit_optimization.minimum_eigensolvers import (
+    SamplingMinimumEigensolver, SamplingMinimumEigensolverResult)
 
 __all__ = ['DWaveMinimumEigensolver']
 
 logger = logging.getLogger(__name__)
 
 
-class DWaveMinimumEigensolver(MinimumEigensolver):
+class DWaveMinimumEigensolver(SamplingMinimumEigensolver):
     """Obtain ground state(s) of an Ising Hamiltonian using D-Wave's QPU.
 
     Args:
@@ -62,9 +63,8 @@ class DWaveMinimumEigensolver(MinimumEigensolver):
     """
 
     def __init__(self,
-                 operator: Union[OperatorBase, LegacyBaseOperator] = None,
-                 aux_operators: Optional[List[Optional[Union[OperatorBase,
-                                                             LegacyBaseOperator]]]] = None,
+                 operator: Optional[BaseOperator] = None,
+                 aux_operators: Optional[List[Optional[BaseOperator]]] = None,
                  sampler: dimod.Sampler = None,
                  num_reads: int = 100,
                  ) -> None:
@@ -75,12 +75,14 @@ class DWaveMinimumEigensolver(MinimumEigensolver):
         self._sampler = sampler
         self._num_reads = num_reads
 
-    def supports_aux_operators(self) -> bool:
-        # NOTE: needed because of overly strict check on MinimumEigenOptimizer
-        # init (see: https://github.com/Qiskit/qiskit-aqua/issues/1306)
+    @classmethod
+    def supports_aux_operators(cls) -> bool:
+        # NOTE: MinimumEigenOptimizer refuses to work with solvers that do not
+        # claim aux operator support (it uses the flag as a proxy for "returns
+        # an eigenstate"), so this has to return True
         return True
 
-    def _operator_to_bqm(self, operator):
+    def _operator_to_bqm(self, operator: BaseOperator) -> dimod.BinaryQuadraticModel:
         """Convert an Ising Hamiltonian operator (with at most 2 Pauli Zs in
         any Pauli term) to a `~dimod.BinaryQuadraticModel` suitable for
         submission to a D-Wave sampler.
@@ -95,19 +97,19 @@ class DWaveMinimumEigensolver(MinimumEigensolver):
 
         # construct a BQM
         # (use to_array for linear coefficients to make sure implied, but not
-        # used, variables are included)
-        return dimod.AdjVectorBQM(qp.objective.linear.to_array(),
-                                  qp.objective.quadratic.to_dict(),
-                                  qp.objective.constant,
-                                  vartype=dimod.BINARY)
+        # used, variables are included; diagonal quadratic terms are folded
+        # into linear biases by dimod, as x**2 == x for binary variables)
+        return dimod.BinaryQuadraticModel(qp.objective.linear.to_array(),
+                                          qp.objective.quadratic.to_dict(),
+                                          qp.objective.constant,
+                                          vartype=dimod.BINARY)
 
     @property
-    def operator(self) -> Optional[OperatorBase]:
+    def operator(self) -> Optional[BaseOperator]:
         return self._operator
 
     @operator.setter
-    def operator(self,
-                 operator: Union[OperatorBase, LegacyBaseOperator]) -> None:
+    def operator(self, operator: Optional[BaseOperator]) -> None:
         """Convert an Ising Hamiltonian operator to a binary quadratic model
         suitable for submission to a D-Wave sampler.
 
@@ -130,22 +132,21 @@ class DWaveMinimumEigensolver(MinimumEigensolver):
             logger.debug('BQM set to %s', self._bqm)
 
     @property
-    def aux_operators(self) -> Optional[List[Optional[OperatorBase]]]:
+    def aux_operators(self) -> Optional[List[Optional[BaseOperator]]]:
         return self._aux_operators
 
     @aux_operators.setter
     def aux_operators(self,
                       aux_operators: Optional[
-                          Union[OperatorBase,
-                                LegacyBaseOperator,
-                                List[Optional[Union[OperatorBase,
-                                                    LegacyBaseOperator]]]]]) -> None:
+                          Union[BaseOperator,
+                                List[Optional[BaseOperator]]]]) -> None:
         if aux_operators is None:
             aux_operators = []
         if not isinstance(aux_operators, list):
             aux_operators = [aux_operators]
 
         self._aux_operators = aux_operators
+        self._aux_bqms = None
 
     @property
     def bqm(self) -> Optional[dimod.BinaryQuadraticModel]:
@@ -176,12 +177,13 @@ class DWaveMinimumEigensolver(MinimumEigensolver):
 
     def compute_minimum_eigenvalue(
             self,
-            operator: Optional[Union[OperatorBase, LegacyBaseOperator]] = None,
-            aux_operators: \
-                Optional[List[Optional[Union[OperatorBase,
-                                             LegacyBaseOperator]]]] = None
-    ) -> MinimumEigensolverResult:
-        super().compute_minimum_eigenvalue(operator, aux_operators)
+            operator: Optional[BaseOperator] = None,
+            aux_operators: Optional[List[Optional[BaseOperator]]] = None
+    ) -> SamplingMinimumEigensolverResult:
+        if operator is not None:
+            self.operator = operator
+        if aux_operators is not None:
+            self.aux_operators = aux_operators
         return self._run()
 
     def _sample(self) -> dimod.SampleSet:
@@ -191,25 +193,28 @@ class DWaveMinimumEigensolver(MinimumEigensolver):
         return self.sampler.sample(self.bqm, **params)
 
     @staticmethod
-    def _stringify(sample: np.ndarray) -> str:
-        """Convert numpy.ndarray vector of 0/1 int values to a bit string."""
-        return ''.join(map(str, sample))
+    def _stringify(sample: Dict, variables: Sequence) -> str:
+        """Convert a sample (mapping of variable to 0/1 value) to a bit string
+        in Qiskit's little-endian convention (variable/qubit 0 rightmost).
+        """
+        return ''.join(str(sample[v]) for v in reversed(variables))
 
-    def _eval_aux_operators(self, state) -> np.ndarray:
-        """Evaluate all aux_operators on the input state."""
-        # NOTE: for lack of better specs, we follow the NumPyEigensolver format
-        values = [(StateFn(operator, is_measurement=True).eval(state).real, 0)
-                  for operator in self._aux_operators]
-        return np.array(values, dtype=object)
+    def _eval_aux_operators(
+            self, samples: List[Tuple[Dict, float]]) -> List[Tuple[float, dict]]:
+        """Evaluate all aux_operators as expectation values over the
+        probability-weighted (ground state) samples.
+        """
+        return [(sum(p * bqm.energy(sample) for sample, p in samples), {})
+                for bqm in self.aux_bqms]
 
-    def _run(self) -> MinimumEigensolverResult:
+    def _run(self) -> SamplingMinimumEigensolverResult:
         """Sample the Ising Hamiltonian provided on a D-Wave QPU to obtain the
         ground state(s).
 
         Returns:
-            MinimumEigensolverResult:
-                Dictionary of results, namely samples in `eigenstate` and
-                energies in `eigenvalue`.
+            SamplingMinimumEigensolverResult:
+                Results, namely a quasi-distribution over ground state samples
+                in `eigenstate` and the lowest energy in `eigenvalue`.
 
         Raises:
             ValueError:
@@ -228,34 +233,44 @@ class DWaveMinimumEigensolver(MinimumEigensolver):
         ground = sampleset.lowest(rtol=0)
         logger.debug('ground states (%d): %r', len(ground), ground)
 
-        result = MinimumEigensolverResult()
+        variables = sorted(ground.variables)
+        total = int(ground.record.num_occurrences.sum())
+
+        # probability-weighted ground state samples
+        samples = [(datum.sample, datum.num_occurrences / total)
+                   for datum in ground.data(fields=['sample', 'num_occurrences'])]
+
+        result = SamplingMinimumEigensolverResult()
         result.eigenvalue = ground.first.energy
 
-        # NOTE: due to inconsistencies in how DictStateFn values are handled in
-        # `MinimumEigenOptimizer` and `DictStateFn` itself (probs vs amplitudes),
-        # the safest (for now) is to follow QAOA's approach and return
-        # counts/reads per eigenstate (when in superposition).
-        result.eigenstate = {self._stringify(rec.sample): rec.num_occurrences
-                             for rec in ground.record}
+        # NOTE: `MinimumEigenOptimizer` interprets eigenstate bitstrings in
+        # Qiskit's little-endian convention, i.e. variable/qubit 0 rightmost
+        result.eigenstate = QuasiDistribution(
+            {self._stringify(sample, variables): p for sample, p in samples})
+
+        best = self._stringify(ground.first.sample, variables)
+        result.best_measurement = {
+            'state': int(best, 2),
+            'bitstring': best,
+            'value': ground.first.energy,
+            'probability': ground.first.num_occurrences / total,
+        }
 
         # optionally, evaluate aux_operators
         if self._aux_operators:
-            result.aux_operator_eigenvalues = [self._eval_aux_operators(bitstr)
-                                               for bitstr in result.eigenstate]
+            result.aux_operators_evaluated = self._eval_aux_operators(samples)
 
         # include all samples for inspection
         result.sampleset = sampleset
 
-        logger.debug('run result: %r', result.data)
+        logger.debug('run result: %r', result)
 
         return result
 
     def run(self,
-            operator: Optional[Union[OperatorBase, LegacyBaseOperator]] = None,
-            aux_operators: \
-                Optional[List[Optional[Union[OperatorBase,
-                                             LegacyBaseOperator]]]] = None
-    ) -> MinimumEigensolverResult:
+            operator: Optional[BaseOperator] = None,
+            aux_operators: Optional[List[Optional[BaseOperator]]] = None
+    ) -> SamplingMinimumEigensolverResult:
         """Obtain ground state(s) of an Ising Hamiltonian using D-Wave's QPU.
         """
         return self.compute_minimum_eigenvalue(operator, aux_operators)
