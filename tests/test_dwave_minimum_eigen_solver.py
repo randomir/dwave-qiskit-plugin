@@ -23,7 +23,6 @@ from qiskit.result import QuasiDistribution
 from qiskit_optimization import QuadraticProgram, QiskitOptimizationError
 from qiskit_optimization.algorithms import (
     MinimumEigenOptimizer, OptimizationResultStatus)
-from qiskit_optimization.converters import QuadraticProgramToQubo
 from qiskit_optimization.minimum_eigensolvers import NumPyMinimumEigensolver
 from qiskit_optimization.translators import to_ising
 
@@ -318,7 +317,6 @@ class TestMinimumEigenOptimizerOnDWave(unittest.TestCase):
 
         # NOTE: auto penalty in LinearEqualityToPenalty is >100, resulting with
         # big dynamic range of QUBO coefficients. Try with penalty=1
-        #qubo = QuadraticProgramToQubo(penalty=1).convert(qp)
 
         # solve with Numpy MES
         numpy_mes = NumPyMinimumEigensolver()

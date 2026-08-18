@@ -62,7 +62,7 @@ full 2^36 state space) produces:
 >>> from qiskit_optimization.minimum_eigensolvers import NumPyMinimumEigensolver
 >>> result = MinimumEigenOptimizer(NumPyMinimumEigensolver()).solve(qp)
 # snipped for brevity
-memory allocation of memory allocation of 1818775484491218187754844912 bytes failed
+memory allocation of 1818775484491218187754844912 bytes failed
 Aborted (core dumped)
 ```
 

@@ -41,7 +41,8 @@ class DWaveMinimumEigensolver(SamplingMinimumEigensolver):
         sampler:
             Instantiated D-Wave sampler. Defaults to
             ~dwave.system.AutoEmbeddingComposite`-wrapped
-            `~dwave.system.DWaveSampler` over a QPU solver.
+           :class:`~dwave.system.AutoEmbeddingComposite`-wrapped
+           :class:`~dwave.system.DWaveSampler` over a QPU solver.
         num_reads:
             Number of QPU reads.
 
@@ -149,7 +150,7 @@ class DWaveMinimumEigensolver(SamplingMinimumEigensolver):
         self._aux_bqms = None
 
     @property
-    def bqm(self) -> Optional[dimod.BinaryQuadraticModel]:
+    def bqm(self) -> dimod.BinaryQuadraticModel:
         """Binary quadratic model representation of Ising Hamiltonian operator.
         """
         bqm = getattr(self, '_bqm', None)
@@ -158,7 +159,7 @@ class DWaveMinimumEigensolver(SamplingMinimumEigensolver):
         return bqm
 
     @property
-    def aux_bqms(self) -> Optional[List[dimod.BinaryQuadraticModel]]:
+    def aux_bqms(self) -> List[dimod.BinaryQuadraticModel]:
         """Binary quadratic model representations of auxiliary Ising Hamiltonian
         operators.
         """
