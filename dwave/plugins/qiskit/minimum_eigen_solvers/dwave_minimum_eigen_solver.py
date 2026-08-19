@@ -94,7 +94,9 @@ class DWaveMinimumEigensolver(SamplingMinimumEigensolver):
         qp.from_ising(operator)
 
         # sanity check
-        assert qp.objective.sense is qp.objective.Sense.MINIMIZE
+        if qp.objective.sense is not qp.objective.Sense.MINIMIZE:
+            raise RuntimeError(f"Unexpected objective sense {qp.objective.sense} "
+                               "for the quadratic program generated from an Ising Hamiltonian")
 
         # construct a BQM
         # (use to_array for linear coefficients to make sure implied, but not
