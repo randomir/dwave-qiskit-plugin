@@ -183,10 +183,8 @@ class DWaveMinimumEigensolver(SamplingMinimumEigensolver):
             operator: Optional[BaseOperator] = None,
             aux_operators: Optional[List[Optional[BaseOperator]]] = None
     ) -> SamplingMinimumEigensolverResult:
-        if operator is not None:
-            self.operator = operator
-        if aux_operators is not None:
-            self.aux_operators = aux_operators
+        self.operator = operator
+        self.aux_operators = aux_operators
         return self._run()
 
     def _sample(self) -> dimod.SampleSet:

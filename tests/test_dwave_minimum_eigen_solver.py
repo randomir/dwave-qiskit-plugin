@@ -95,8 +95,8 @@ class TestMinimumEigensolver(unittest.TestCase):
             dwave_mes.compute_minimum_eigenvalue()
 
         # manually set operator
-        dwave_mes.operator = operator
-        result = dwave_mes.compute_minimum_eigenvalue()
+        result = dwave_mes.compute_minimum_eigenvalue(operator=operator)
+        self.assertEqual(dwave_mes.operator, operator)
         self.assertEqual(result.eigenvalue, -0.5)
         self.assertIsInstance(result.eigenstate, QuasiDistribution)
         self.assertDictEqual(result.eigenstate.binary_probabilities(), {'1': 1.0})
@@ -104,13 +104,9 @@ class TestMinimumEigensolver(unittest.TestCase):
         self.assertEqual(result.best_measurement['value'], -0.5)
 
         # test aux operator
-        dwave_mes.aux_operators = [operator]
-        result = dwave_mes.compute_minimum_eigenvalue()
-        self.assertEqual(len(result.aux_operators_evaluated), 1)
-
-        # test getters
-        self.assertEqual(dwave_mes.operator, operator)
+        result = dwave_mes.compute_minimum_eigenvalue(aux_operators=[operator])
         self.assertEqual(dwave_mes.aux_operators, [operator])
+        self.assertEqual(len(result.aux_operators_evaluated), 1)
 
         # test .run
         result = dwave_mes.run()
