@@ -21,6 +21,7 @@ from dwave.system import DWaveSampler, AutoEmbeddingComposite
 from qiskit.quantum_info.operators.base_operator import BaseOperator
 from qiskit.result import QuasiDistribution
 from qiskit_optimization.problems import QuadraticProgram
+from qiskit_optimization.minimum_eigensolvers.list_or_dict import ListOrDict
 from qiskit_optimization.minimum_eigensolvers import (
     SamplingMinimumEigensolver, SamplingMinimumEigensolverResult)
 
@@ -65,8 +66,8 @@ class DWaveMinimumEigensolver(SamplingMinimumEigensolver):
 
     def __init__(self,
                  operator: Optional[BaseOperator] = None,
-                 aux_operators: Optional[List[Optional[BaseOperator]]] = None,
-                 sampler: dimod.Sampler = None,
+                 aux_operators: Optional[ListOrDict[BaseOperator]] = None,
+                 sampler: Optional[dimod.Sampler] = None,
                  num_reads: int = 100,
                  ) -> None:
         super().__init__()
@@ -139,14 +140,9 @@ class DWaveMinimumEigensolver(SamplingMinimumEigensolver):
         return self._aux_operators
 
     @aux_operators.setter
-    def aux_operators(self,
-                      aux_operators: Optional[
-                          Union[BaseOperator,
-                                List[Optional[BaseOperator]]]]) -> None:
+    def aux_operators(self, aux_operators: Optional[ListOrDict[BaseOperator]] = None) -> None:
         if aux_operators is None:
             aux_operators = []
-        if not isinstance(aux_operators, list):
-            aux_operators = [aux_operators]
 
         self._aux_operators = aux_operators
         self._aux_bqms = None
@@ -161,13 +157,25 @@ class DWaveMinimumEigensolver(SamplingMinimumEigensolver):
         return bqm
 
     @property
-    def aux_bqms(self) -> List[dimod.BinaryQuadraticModel]:
+    def aux_bqms(self) -> ListOrDict[dimod.BinaryQuadraticModel]:
         """Binary quadratic model representations of auxiliary Ising Hamiltonian
         operators.
         """
         bqms = getattr(self, '_aux_bqms', None)
+
         if bqms is None:
-            bqms = self._aux_bqms = [self._operator_to_bqm(aux_op) for aux_op in self.aux_operators]
+            if isinstance(self.aux_operators, list):
+                bqms = [None] * len(self.aux_operators)
+                key_op_iterator = enumerate(self.aux_operators)
+            else:
+                bqms = {}
+                key_op_iterator = self.aux_operators.items()
+
+            for key, operator in key_op_iterator:
+                bqms[key] = self._operator_to_bqm(operator)
+
+            self._aux_bqms = bqms
+
         return bqms
 
     @property
@@ -201,12 +209,21 @@ class DWaveMinimumEigensolver(SamplingMinimumEigensolver):
         return ''.join(str(sample[v]) for v in reversed(variables))
 
     def _eval_aux_operators(
-            self, samples: List[Tuple[Dict, float]]) -> List[Tuple[float, dict]]:
+            self, samples: List[Tuple[Dict, float]]) -> ListOrDict[Tuple[float, Dict[str, float]]]:
         """Evaluate all aux_operators as expectation values over the
         probability-weighted (ground state) samples.
         """
-        return [(sum(p * bqm.energy(sample) for sample, p in samples), {})
-                for bqm in self.aux_bqms]
+        if isinstance(self.aux_bqms, list):
+            values = [None] * len(self.aux_bqms)
+            key_bqm_iterator = enumerate(self.aux_bqms)
+        else:
+            values = {}
+            key_bqm_iterator = self.aux_bqms.items()
+
+        for key, bqm in key_bqm_iterator:
+            values[key] = (sum(p * bqm.energy(sample) for sample, p in samples), {})
+
+        return values
 
     def _run(self) -> SamplingMinimumEigensolverResult:
         """Sample the Ising Hamiltonian provided on a D-Wave QPU to obtain the

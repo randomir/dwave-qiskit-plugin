@@ -138,7 +138,7 @@ class TestMinimumEigensolver(unittest.TestCase):
         self.assertEqual(set(eigenstate), set(ground_states))
         self.assertAlmostEqual(sum(eigenstate.values()), 1)
 
-    def test_aux_operators(self):
+    def test_aux_operators_as_list(self):
         # two ground states: '01', '10'
         operator = SparsePauliOp('ZZ')
         bqm = dimod.BQM.from_ising({}, {(0, 1): 1}).binary
@@ -153,12 +153,34 @@ class TestMinimumEigensolver(unittest.TestCase):
 
         # verify conversion to bqm
         self.assertEqual(dwave_mes.bqm, bqm)
-        self.assertListEqual(dwave_mes.aux_bqms, aux_bqms)
+        self.assertEqual(dwave_mes.aux_bqms, aux_bqms)
 
         # verify aux_operator expectations over the two degenerate ground
         # states average out to zero: (-1 + 1)/2 and (+1 - 1)/2
         self.assertEqual(result.aux_operators_evaluated[0][0], 0)
         self.assertEqual(result.aux_operators_evaluated[1][0], 0)
+
+    def test_aux_operators_as_dict(self):
+        # two ground states: '01', '10'
+        operator = SparsePauliOp('ZZ')
+        bqm = dimod.BQM.from_ising({}, {(0, 1): 1}).binary
+
+        aux_operators = {'01': SparsePauliOp('IZ'), '10': SparsePauliOp('ZI')}
+        aux_bqms = {'01': dimod.BQM.from_ising({0: -1, 1: 0}, {}).binary,
+                    '10': dimod.BQM.from_ising({0: 0, 1: -1}, {}).binary}
+
+        # use exact solver as sampler
+        dwave_mes = DWaveMinimumEigensolver(sampler=dimod.ExactSolver())
+        result = dwave_mes.compute_minimum_eigenvalue(operator, aux_operators)
+
+        # verify conversion to bqm
+        self.assertEqual(dwave_mes.bqm, bqm)
+        self.assertEqual(dwave_mes.aux_bqms, aux_bqms)
+
+        # verify aux_operator expectations over the two degenerate ground
+        # states average out to zero: (-1 + 1)/2 and (+1 - 1)/2
+        self.assertEqual(result.aux_operators_evaluated['01'][0], 0)
+        self.assertEqual(result.aux_operators_evaluated['10'][0], 0)
 
 
 class TestMinimumEigenOptimizerFlow(unittest.TestCase):
