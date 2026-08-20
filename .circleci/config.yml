@@ -1,22 +1,31 @@
 version: 2.1
 
+parameters:
+  cache-generation:
+    type: integer
+    default: 2
+
 orbs:
-  win: circleci/windows@2.2.0
+  win: circleci/windows@5.0
 
 jobs:
   test-linux:
     parameters:
-      python-image-version:
+      python-version:
         type: string
 
     docker:
-      - image: circleci/python:<< parameters.python-image-version >>
+      - image: python:<< parameters.python-version >>
 
     steps:
       - checkout
 
+      - run: &save-python-version
+          name: Save full python version in file to be used as part of cache key
+          command: python -V > /tmp/python-V.txt
+
       - restore_cache: &restore-cache-env
-          key: v1-dependencies-{{ checksum "requirements.txt" }}-{{ checksum "tests/requirements.txt" }}-{{ .Environment.CIRCLE_JOB }}
+          key: &env-cache-key v<< pipeline.parameters.cache-generation >>-python-{{ checksum "/tmp/python-V.txt" }}-pip-{{ checksum "requirements.txt" }}-{{ checksum "tests/requirements.txt" }}-{{ .Environment.CIRCLE_JOB }}
 
       - run: &create-venv-install-deps
           name: Create virtual environment and install dependencies
@@ -27,7 +36,7 @@ jobs:
             pip install -r requirements.txt -r tests/requirements.txt
 
       - save_cache: &save-cache-env
-          key: v1-dependencies-{{ checksum "requirements.txt" }}-{{ checksum "tests/requirements.txt" }}-{{ .Environment.CIRCLE_JOB }}
+          key: *env-cache-key
           paths:
             - env
 
@@ -43,43 +52,49 @@ jobs:
             . env/bin/activate
             codecov
 
-  test-osx:
+  test-macos:
     parameters:
       python-version:
         type: string
+      xcode:
+        type: string
+        default: "16.4.0"
 
     macos:
-      xcode: "12.2.0"
-
-    environment:
-      HOMEBREW_NO_AUTO_UPDATE: 1
+      xcode: << parameters.xcode >>
 
     steps:
       - checkout
 
-      - run:
+      - restore_cache: &restore-cache-pyenv
+          key: &brew-pyenv-cache-key v<< pipeline.parameters.cache-generation >>-brew-pyenv-{{ .Environment.CIRCLE_JOB }}-xcode-<< parameters.xcode >>
+
+      - run: &brew-install-pyenv
           name: Install pyenv
           command: |
+            brew update
             brew install pyenv
 
-      - restore_cache: &restore-cache-pyenv
-          key: v1-pyenv-{{ .Environment.CIRCLE_JOB }}-xcode-12.2.0
-
-      - run:
+      - run: &pyenv-install-python
           name: Install python
-          command: |
-            pyenv install << parameters.python-version>> -s
+          command: pyenv install << parameters.python-version >> -s
 
-      - run:
+      - run: &pyenv-set-system-python
           name: Set system python
           command: |
-            pyenv global << parameters.python-version >>
+            echo -e '\n\n# Initialize pyenv' >> ~/.bash_profile
+            echo 'eval "$(pyenv init --path 2>/dev/null || true)"' >> ~/.bash_profile
             echo 'eval "$(pyenv init -)"' >> ~/.bash_profile
+            pyenv global << parameters.python-version >>
 
       - save_cache: &save-cache-pyenv
-          key: v1-pyenv-{{ .Environment.CIRCLE_JOB }}-xcode-12.2.0
+          key: *brew-pyenv-cache-key
           paths:
+            - /Users/distiller/Library/Caches/Homebrew
+            - /usr/local/Homebrew
             - ~/.pyenv
+
+      - run: *save-python-version
 
       - restore_cache: *restore-cache-env
 
@@ -91,7 +106,7 @@ jobs:
 
       - run: *run-codecov
 
-  test-win:
+  test-windows:
     parameters:
       python-version:
         type: string
@@ -104,11 +119,25 @@ jobs:
 
       - run:
           name: Install python and create virtualenv
+          shell: bash -eo pipefail
           command: |
-            nuget install python -Version << parameters.python-version >> -ExcludeVersion -OutputDirectory .
-            .\python\tools\python.exe --version
-            .\python\tools\python.exe -m pip install virtualenv
-            .\python\tools\python.exe -m virtualenv env
+            # de-normalize a pre-release version, because why would microsoft follow pep-440?
+            version=$(sed -E 's/([[:digit:]])([[:alpha:]])/\1-\2/' \<<<"<< parameters.python-version >>")
+
+            # resolve python MAJOR.MINOR[.PATCH[-PRERELEASE]] version to the latest
+            # MAJOR.MINOR.PATCH version available on NuGet (ignoring the actual pre-release segment)
+            # note: we rely on versions retrieved being sorted semantically!
+            # (so '3.13' might resolve to '3.13.0rc3' before final release, and to '3.13.0' afterwards)
+            full_version=$(
+              curl -s 'https://azuresearch-usnc.nuget.org/query?q=python&prerelease=true' \
+              | jq -r '.data[] | select(.id == "python") .versions[] | .version' \
+              | awk -F'[.-]' -v ver="$version" \
+                  'index($0, ver) == 1 && $3 >= m { m = $3; v = $0 } END { print v }'
+            )
+
+            nuget install python -Version "$full_version" -ExcludeVersion
+            python/tools/python -V
+            python/tools/python -m venv env
 
       - run:
           name: Install dependencies
@@ -116,8 +145,7 @@ jobs:
             env\Scripts\activate.ps1
             python --version
             pip install -U pip setuptools wheel twine
-            pip install -r requirements.txt
-            pip install -r tests\requirements.txt
+            pip install -U -r requirements.txt -r tests\requirements.txt
 
       - run:
           name: Run unittests
@@ -125,10 +153,9 @@ jobs:
             env\Scripts\activate.ps1
             coverage run -m unittest discover
 
-
   deploy:
     docker:
-      - image: circleci/python:3.7
+      - image: python:3.12
 
     steps:
       - checkout
@@ -160,15 +187,15 @@ workflows:
       - test-linux:
           matrix:
             parameters:
-              python-image-version: ["3.6", "3.7", "3.8"]
-      - test-osx:
+              python-version: &python-versions ["3.10", "3.11", "3.12", "3.13", "3.14"]
+      - test-macos:
           matrix:
             parameters:
-              python-version: ["3.6.8", "3.7.5", "3.8.6"]
-      - test-win:
+              python-version: *python-versions
+      - test-windows:
           matrix:
             parameters:
-              python-version: ["3.6.8", "3.7.5", "3.8.6"]
+              python-version: *python-versions
 
   deploy:
     jobs:

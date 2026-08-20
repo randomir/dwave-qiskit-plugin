@@ -16,15 +16,15 @@ import random
 import unittest
 import itertools
 
-from parameterized import parameterized, param
+from parameterized import parameterized
 
-from qiskit.aqua.operators import X, Y, Z, I, MatrixOp, SummedOp, StateFn
-from qiskit.aqua.algorithms import NumPyMinimumEigensolver
-from qiskit.optimization import QuadraticProgram, QiskitOptimizationError
-from qiskit.optimization.algorithms import MinimumEigenOptimizer
-from qiskit.optimization.converters import QuadraticProgramToQubo
-from qiskit.optimization.applications.ising.common import sample_most_likely
-from qiskit.optimization.algorithms.optimization_algorithm import OptimizationResultStatus
+from qiskit.quantum_info import SparsePauliOp, Operator
+from qiskit.result import QuasiDistribution
+from qiskit_optimization import QuadraticProgram, QiskitOptimizationError
+from qiskit_optimization.algorithms import (
+    MinimumEigenOptimizer, OptimizationResultStatus)
+from qiskit_optimization.minimum_eigensolvers import NumPyMinimumEigensolver
+from qiskit_optimization.translators import to_ising
 
 import dimod
 from dwave.system import DWaveSampler, EmbeddingComposite, DWaveCliqueSampler
@@ -51,12 +51,14 @@ def create_random_qubo_qp(size=3, min_bias=-1, max_bias=1, seed=None):
 class TestMinimumEigensolver(unittest.TestCase):
 
     @parameterized.expand([
-        ("Z", Z, ({0: -1}, {})),
-        ("IZ", I^Z, ({0: -1, 1: 0}, {})),
-        ("ZZ", Z^Z, ({}, {(0, 1): 1})),
-        ("IZZI", I^Z^Z^I, ({0: 0, 1: 0, 2: 0, 3: 0}, {(1, 2): 1})),
-        ("IZZ+ZIZ", SummedOp([I^Z^Z, 2 * Z^I^Z]), ({}, {(0, 1): 1, (0, 2): 2})),
-        ("Z_matrix", MatrixOp([[1, 0], [0, -1]]), ({0: -1}, {})),
+        ("Z", SparsePauliOp('Z'), ({0: -1}, {})),
+        ("IZ", SparsePauliOp('IZ'), ({0: -1, 1: 0}, {})),
+        ("ZZ", SparsePauliOp('ZZ'), ({}, {(0, 1): 1})),
+        ("IZZI", SparsePauliOp('IZZI'), ({0: 0, 1: 0, 2: 0, 3: 0}, {(1, 2): 1})),
+        ("IZZ+ZIZ", SparsePauliOp(['IZZ', 'ZIZ'], coeffs=[1, 2]),
+         ({}, {(0, 1): 1, (0, 2): 2})),
+        ("Z_matrix", SparsePauliOp.from_operator(Operator([[1, 0], [0, -1]])),
+         ({0: -1}, {})),
     ])
     def test_operator_conversion(self, name, operator, ising):
         mes = DWaveMinimumEigensolver(operator)
@@ -65,8 +67,8 @@ class TestMinimumEigensolver(unittest.TestCase):
         self.assertEqual(mes.bqm.spin, bqm)
 
     @parameterized.expand([
-        ("ZZZ", Z^Z^Z),
-        ("X", X),
+        ("ZZZ", SparsePauliOp('ZZZ')),
+        ("X", SparsePauliOp('X')),
     ])
     def test_non_ising_operator(self, name, operator):
         with self.assertRaises(QiskitOptimizationError):
@@ -79,7 +81,7 @@ class TestMinimumEigensolver(unittest.TestCase):
         qp = QuadraticProgram()
         qp.binary_var('x')
         qp.minimize(linear=[-1])
-        operator, offset = qp.to_ising()
+        operator, offset = to_ising(qp)
 
         # use exact solver as sampler
         sampler = dimod.ExactSolver()
@@ -93,20 +95,18 @@ class TestMinimumEigensolver(unittest.TestCase):
             dwave_mes.compute_minimum_eigenvalue()
 
         # manually set operator
-        dwave_mes.operator = operator
-        result = dwave_mes.compute_minimum_eigenvalue()
+        result = dwave_mes.compute_minimum_eigenvalue(operator=operator)
+        self.assertEqual(dwave_mes.operator, operator)
         self.assertEqual(result.eigenvalue, -0.5)
-        self.assertIsInstance(result.eigenstate, dict)
-        self.assertDictEqual(result.eigenstate, {'1': 1})
+        self.assertIsInstance(result.eigenstate, QuasiDistribution)
+        self.assertDictEqual(result.eigenstate.binary_probabilities(), {'1': 1.0})
+        self.assertEqual(result.best_measurement['bitstring'], '1')
+        self.assertEqual(result.best_measurement['value'], -0.5)
 
         # test aux operator
-        dwave_mes.aux_operators = [operator]
-        result = dwave_mes.compute_minimum_eigenvalue()
-        self.assertEqual(len(result.aux_operator_eigenvalues), 1)
-
-        # test getters
-        self.assertEqual(dwave_mes.operator, operator)
+        result = dwave_mes.compute_minimum_eigenvalue(aux_operators=[operator])
         self.assertEqual(dwave_mes.aux_operators, [operator])
+        self.assertEqual(len(result.aux_operators_evaluated), 1)
 
         # test .run
         result = dwave_mes.run()
@@ -114,33 +114,36 @@ class TestMinimumEigensolver(unittest.TestCase):
 
     def test_degenerate_ground_states(self):
         # ground states: '0', '1'
-        operator = 0 * Z
+        operator = SparsePauliOp('Z', coeffs=[0])
 
         # use exact solver as sampler
         dwave_mes = DWaveMinimumEigensolver(sampler=dimod.ExactSolver())
 
         result = dwave_mes.compute_minimum_eigenvalue(operator)
         self.assertEqual(result.eigenvalue, 0)
-        self.assertDictEqual(result.eigenstate, {'0': 1, '1': 1})
+        self.assertDictEqual(result.eigenstate.binary_probabilities(),
+                             {'0': 0.5, '1': 0.5})
 
     def test_ground_states_returned_only(self):
         # two ground states, six excited states
-        operator = SummedOp([I^Z^Z, 2 * Z^I^Z])
-        ground_states = ['100', '011']
+        operator = SparsePauliOp(['IZZ', 'ZIZ'], coeffs=[1, 2])
+        # in Qiskit's little-endian convention (variable/qubit 0 rightmost)
+        ground_states = ['001', '110']
 
         # use exact solver as sampler
         dwave_mes = DWaveMinimumEigensolver(sampler=dimod.ExactSolver())
 
         result = dwave_mes.compute_minimum_eigenvalue(operator)
-        self.assertEqual(set(result.eigenstate), set(ground_states))
-        self.assertEqual(sum(result.eigenstate.values()), 2)
+        eigenstate = result.eigenstate.binary_probabilities()
+        self.assertEqual(set(eigenstate), set(ground_states))
+        self.assertAlmostEqual(sum(eigenstate.values()), 1)
 
-    def test_aux_operators(self):
+    def test_aux_operators_as_list(self):
         # two ground states: '01', '10'
-        operator = Z^Z
+        operator = SparsePauliOp('ZZ')
         bqm = dimod.BQM.from_ising({}, {(0, 1): 1}).binary
 
-        aux_operators = [I^Z, Z^I]
+        aux_operators = [SparsePauliOp('IZ'), SparsePauliOp('ZI')]
         aux_bqms = [dimod.BQM.from_ising({0: -1, 1: 0}, {}).binary,
                     dimod.BQM.from_ising({0: 0, 1: -1}, {}).binary]
 
@@ -150,11 +153,34 @@ class TestMinimumEigensolver(unittest.TestCase):
 
         # verify conversion to bqm
         self.assertEqual(dwave_mes.bqm, bqm)
-        self.assertListEqual(dwave_mes.aux_bqms, aux_bqms)
+        self.assertEqual(dwave_mes.aux_bqms, aux_bqms)
 
-        # verify aux_operator eigenvalues (-1, +1) and (+1, -1)
-        self.assertEqual(sum(result.aux_operator_eigenvalues[0][:,0]), 0)
-        self.assertEqual(sum(result.aux_operator_eigenvalues[1][:,0]), 0)
+        # verify aux_operator expectations over the two degenerate ground
+        # states average out to zero: (-1 + 1)/2 and (+1 - 1)/2
+        self.assertEqual(result.aux_operators_evaluated[0][0], 0)
+        self.assertEqual(result.aux_operators_evaluated[1][0], 0)
+
+    def test_aux_operators_as_dict(self):
+        # two ground states: '01', '10'
+        operator = SparsePauliOp('ZZ')
+        bqm = dimod.BQM.from_ising({}, {(0, 1): 1}).binary
+
+        aux_operators = {'01': SparsePauliOp('IZ'), '10': SparsePauliOp('ZI')}
+        aux_bqms = {'01': dimod.BQM.from_ising({0: -1, 1: 0}, {}).binary,
+                    '10': dimod.BQM.from_ising({0: 0, 1: -1}, {}).binary}
+
+        # use exact solver as sampler
+        dwave_mes = DWaveMinimumEigensolver(sampler=dimod.ExactSolver())
+        result = dwave_mes.compute_minimum_eigenvalue(operator, aux_operators)
+
+        # verify conversion to bqm
+        self.assertEqual(dwave_mes.bqm, bqm)
+        self.assertEqual(dwave_mes.aux_bqms, aux_bqms)
+
+        # verify aux_operator expectations over the two degenerate ground
+        # states average out to zero: (-1 + 1)/2 and (+1 - 1)/2
+        self.assertEqual(result.aux_operators_evaluated['01'][0], 0)
+        self.assertEqual(result.aux_operators_evaluated['10'][0], 0)
 
 
 class TestMinimumEigenOptimizerFlow(unittest.TestCase):
@@ -193,10 +219,26 @@ class TestMinimumEigenOptimizerFlow(unittest.TestCase):
         # verify all ground states are present
         self.assertEqual(len(result.x), qp.get_num_vars())
         self.assertEqual(len(result.samples), len(ground_states))
-        self.assertSetEqual(set(sample for sample, _, _ in result.samples), ground_states)
+        self.assertSetEqual(
+            set(''.join(str(int(v)) for v in sample.x) for sample in result.samples),
+            ground_states)
 
         # verify raw sampleset is accessible
         self.assertEqual(len(result.min_eigen_solver_result.sampleset), 2 ** qp.get_num_vars())
+
+    def test_asymmetric_solution(self):
+        # regression check for bit ordering: unique ground state [0, 1]
+        qp = QuadraticProgram()
+        qp.binary_var('x')
+        qp.binary_var('y')
+        qp.minimize(linear=[1, -2], quadratic={'xy': 1})
+
+        dwave_mes = DWaveMinimumEigensolver(sampler=dimod.ExactSolver())
+        optimizer = MinimumEigenOptimizer(dwave_mes)
+        result = optimizer.solve(qp)
+
+        self.assertEqual(list(result.x), [0.0, 1.0])
+        self.assertEqual(result.fval, -2.0)
 
 
 class TestMinimumEigenOptimizerOnDWave(unittest.TestCase):
@@ -228,11 +270,11 @@ class TestMinimumEigenOptimizerOnDWave(unittest.TestCase):
         self.assertEqual(result.status, OptimizationResultStatus.SUCCESS)
 
     def test_solver_selection(self):
-        """QP is solved on a QPU with Chimera topology and embedded with a clique embedder."""
+        """QP is solved on a QPU with Zephyr topology and embedded with a clique embedder."""
 
         qp = create_random_qubo_qp(size=3, seed=123)
 
-        sampler = DWaveCliqueSampler(solver=dict(topology__type='chimera'))
+        sampler = DWaveCliqueSampler(solver=dict(topology__type='zephyr'))
         mes = DWaveMinimumEigensolver(sampler=sampler)
         result = MinimumEigenOptimizer(mes).solve(qp)
 
@@ -293,7 +335,6 @@ class TestMinimumEigenOptimizerOnDWave(unittest.TestCase):
 
         # NOTE: auto penalty in LinearEqualityToPenalty is >100, resulting with
         # big dynamic range of QUBO coefficients. Try with penalty=1
-        #qubo = QuadraticProgramToQubo(penalty=1).convert(qp)
 
         # solve with Numpy MES
         numpy_mes = NumPyMinimumEigensolver()

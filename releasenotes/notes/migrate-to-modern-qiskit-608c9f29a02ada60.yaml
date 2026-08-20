@@ -1,0 +1,45 @@
+---
+prelude: >
+    ``DWaveMinimumEigensolver`` is ported from the retired qiskit-aqua stack
+    to modern Qiskit. It now implements qiskit-optimization's
+    ``SamplingMinimumEigensolver`` interface and works with ``qiskit>=1.0``
+    (tested with 2.x) and ``qiskit-optimization>=0.7``.
+upgrade:
+  - |
+    Python 3.10 or newer is now required. Support for Python 3.6-3.9 is
+    dropped.
+  - |
+    Dependencies changed from ``qiskit-aqua>=0.8.0`` to ``qiskit>=1.0`` and
+    ``qiskit-optimization>=0.7``, and ``dwave-system`` is raised to
+    ``>=1.20``. The package intentionally does not depend on
+    ``qiskit-algorithms`` (in maintenance mode); the solver subclasses
+    ``qiskit_optimization.minimum_eigensolvers.SamplingMinimumEigensolver``
+    vendored by qiskit-optimization.
+  - |
+    ``DWaveMinimumEigensolver.compute_minimum_eigenvalue()`` now returns a
+    ``SamplingMinimumEigensolverResult``. The ``eigenstate`` attribute is a
+    ``qiskit.result.QuasiDistribution`` of probabilities over ground-state
+    bitstrings, replacing the previous dict of per-state read counts; use
+    ``result.eigenstate.binary_probabilities()`` to get bitstring keys. A
+    QAOA-style ``best_measurement`` mapping is also populated, and the raw
+    ``dimod.SampleSet`` remains attached as ``result.sampleset``.
+  - |
+    Eigenstate bitstrings now follow Qiskit's little-endian convention:
+    variable/qubit 0 is the rightmost character. Previously variable 0 was
+    the leftmost character. This matches how
+    ``MinimumEigenOptimizer._eigenvector_to_solutions()`` maps bitstrings
+    back to problem variables in modern qiskit-optimization; without this
+    change, solutions of asymmetric problems would be silently corrupted.
+  - |
+    Operators are accepted as ``qiskit.quantum_info.SparsePauliOp`` (or any
+    ``BaseOperator`` convertible by qiskit-optimization's ``from_ising``
+    translator). Legacy opflow operator types (``OperatorBase``,
+    ``LegacyBaseOperator``, ``StateFn``, ``SummedOp``, ``MatrixOp``) are no
+    longer supported, as they were removed from Qiskit.
+  - |
+    Auxiliary operator results moved from ``result.aux_operator_eigenvalues``
+    to ``result.aux_operators_evaluated``, formatted as ``(value, metadata)``
+    tuples. Values are now expectation values over the returned ground-state
+    distribution, computed classically from the operators' binary quadratic
+    model form, instead of per-ground-state evaluations via opflow
+    ``StateFn``.

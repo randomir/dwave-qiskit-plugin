@@ -1,22 +1,22 @@
 # D-Wave Ocean plugin for IBM Qiskit
 
-Enables [Qiskit](https://qiskit.org/) users to obtain ground state(s) of Ising Hamiltonians using [D-Wave](https://www.dwavesys.com/)'s QPU available via [Leap](https://cloud.dwavesys.com/).
+Enables [Qiskit](https://www.ibm.com/quantum/qiskit) users to obtain ground state(s) of Ising Hamiltonians using [D-Wave](https://www.dwavesys.com/)'s QPU available via [Leap](https://cloud.dwavesys.com/).
 
-The package provides an implementation of Qiskit's [`MinimumEigensolver`](https://qiskit.org/documentation/stubs/qiskit.aqua.algorithms.MinimumEigensolver.html)
+The package provides an implementation of Qiskit Optimization's
+[`SamplingMinimumEigensolver`](https://qiskit-community.github.io/qiskit-optimization/apidocs/qiskit_optimization.minimum_eigensolvers.html)
 interface (available as `DWaveMinimumEigensolver`) which can be used directly on qubit operators, or via
-`qikist.optimization`'s [`MinimumEigenOptimizer`](https://qiskit.org/documentation/stubs/qiskit.optimization.algorithms.MinimumEigenOptimizer.html).
+`qiskit_optimization`'s [`MinimumEigenOptimizer`](https://qiskit-community.github.io/qiskit-optimization/stubs/qiskit_optimization.algorithms.MinimumEigenOptimizer.html).
 
 
 ## Examples
 
-Solve a [`QuadraticProgram`](https://qiskit.org/documentation/stubs/qiskit.optimization.QuadraticProgram.html)
-with [`MinimumEigenOptimizer`](https://qiskit.org/documentation/stubs/qiskit.optimization.algorithms.MinimumEigenOptimizer.html)
-(see Qiskit's [tutorial](https://qiskit.org/documentation/tutorials/optimization/3_minimum_eigen_optimizer.html))
+Solve a [`QuadraticProgram`](https://qiskit-community.github.io/qiskit-optimization/stubs/qiskit_optimization.QuadraticProgram.html)
+with [`MinimumEigenOptimizer`](https://qiskit-community.github.io/qiskit-optimization/stubs/qiskit_optimization.algorithms.MinimumEigenOptimizer.html)
 using `DWaveMinimumEigensolver`:
 
 ```python
->>> from qiskit.optimization import QuadraticProgram
->>> from qiskit.optimization.algorithms import MinimumEigenOptimizer
+>>> from qiskit_optimization import QuadraticProgram
+>>> from qiskit_optimization.algorithms import MinimumEigenOptimizer
 >>> from dwave.plugins.qiskit import DWaveMinimumEigensolver
 ...
 >>> # Construct a simple quadratic program
@@ -31,68 +31,62 @@ using `DWaveMinimumEigensolver`:
 >>> result = optimizer.solve(qp)
 ...
 >>> print(result)
-optimal function value: 0.0
-optimal value: [0. 1.]
-status: SUCCESS
->>> result.samples
-[('01', 0.0, 0.39), ('00', 0.0, 0.25), ('10', 0.0, 0.36)]
+fval=0.0, x=0.0, y=0.0, status=SUCCESS
+>>> [(''.join(str(int(v)) for v in s.x), s.fval, s.probability) for s in result.samples]
+[('00', 0.0, 0.33), ('10', 0.0, 0.33), ('01', 0.0, 0.33)]
 ```
 
-Solve a 6-city TSP (or [some other Ising model](https://qiskit.org/documentation/apidoc/qiskit.optimization.applications.ising.html#module-qiskit.optimization.applications.ising)).
+Solve a 6-city TSP (or some other
+[optimization application](https://qiskit-community.github.io/qiskit-optimization/apidocs/qiskit_optimization.applications.html)),
+a 36-qubit Ising Hamiltonian:
 
 ```python
->>> from qiskit.optimization.applications.ising import tsp
->>> from qiskit.optimization.applications.ising.common import sample_most_likely
+>>> from qiskit_optimization.applications import Tsp
+>>> from qiskit_optimization.algorithms import MinimumEigenOptimizer
 >>> from dwave.plugins.qiskit import DWaveMinimumEigensolver
 ...
->>> six_cities_tsp = tsp.random_tsp(6, seed=123)
->>> operator, offset = tsp.get_operator(six_cities_tsp)
-...
->>> print(operator.print_details())
-IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIZ	(-400141.5+0j)
-IIIIIIIIIIIIIIIIIIIIIIIIIIIIZIIIIIII	(-400152.5+0j)
-IIIIIIIIIIIIIIIIIIIIIIIIIIIIZIIIIIIZ	(12+0j)
-# snipped for brevity
->>> print(operator.num_qubits)
-36
+>>> tsp = Tsp.create_random_instance(6, seed=123)
+>>> qp = tsp.to_quadratic_program()
 ...
 >>> dwave_mes = DWaveMinimumEigensolver(num_reads=1000)
->>> result = dwave_mes.compute_minimum_eigenvalue(operator)
+>>> result = MinimumEigenOptimizer(dwave_mes).solve(qp)
 ...
->>> x = sample_most_likely(result.eigenstate)
->>> tsp.tsp_feasible(x)
-True
->>> tsp.get_tsp_solution(x)
-[2, 3, 5, 1, 4, 0]
+>>> tsp.interpret(result)
+[3, 4, 2, 1, 5, 0]
 ```
 
-For comparison, trying this on `NumPyMinimumEigensolver` produces:
+For comparison, trying this on `NumPyMinimumEigensolver` (which constructs the
+full 2^36 state space) produces:
 
 ```python
->>> from qiskit.aqua.algorithms import NumPyMinimumEigensolver
->>> result = NumPyMinimumEigensolver().compute_minimum_eigenvalue(operator)
+>>> from qiskit_optimization.minimum_eigensolvers import NumPyMinimumEigensolver
+>>> result = MinimumEigenOptimizer(NumPyMinimumEigensolver()).solve(qp)
 # snipped for brevity
-MemoryError: Unable to allocate 512. GiB for an array with shape (68719476737,) and data type uint64
+memory allocation of 1818775484491218187754844912 bytes failed
+Aborted (core dumped)
 ```
 
-and trying with `QAOA` backed with "qasm_simulator" produces:
+and trying with `QAOA` backed by the reference `StatevectorSampler` primitive
+produces:
 
 ```python
->>> from qiskit import BasicAer
->>> from qiskit.aqua import QuantumInstance
->>> from qiskit.aqua.algorithms import QAOA
-
->>> quantum_instance = QuantumInstance(BasicAer.get_backend('qasm_simulator'))
->>> qaoa_mes = QAOA(quantum_instance=quantum_instance, initial_point=[0., 0.])
->>> result = qaoa_mes.compute_minimum_eigenvalue(operator)
+>>> import numpy as np
+>>> from qiskit.primitives import StatevectorSampler
+>>> from qiskit_optimization.minimum_eigensolvers import QAOA
+>>> from qiskit_optimization.optimizers import COBYLA
+...
+>>> qaoa_mes = QAOA(sampler=StatevectorSampler(), optimizer=COBYLA(),
+...                 initial_point=np.array([0.0, 0.0]))
+>>> result = MinimumEigenOptimizer(qaoa_mes).solve(qp)
 # snipped for brevity
-BasicAerError: 'Number of qubits 36 is greater than maximum (24) for "qasm_simulator".'
+MemoryError: Unable to allocate 1.00 TiB for an array with shape (68719476736,) and data type complex128
 ```
 
 ## Installation
 
-Compatible with Python 3.6+, [Qiskit](https://github.com/Qiskit/qiskit) 0.23.0+,
-and [Ocean](https://github.com/dwavesystems/dwave-ocean-sdk) 3.1.0+.
+Compatible with Python 3.10+, [Qiskit](https://github.com/Qiskit/qiskit) 1.0+,
+[qiskit-optimization](https://github.com/qiskit-community/qiskit-optimization) 0.7+,
+and [Ocean](https://github.com/dwavesystems/dwave-ocean-sdk)'s dwave-system 1.20+.
 
 ```bash
 pip install dwave-qiskit-plugin
@@ -100,13 +94,12 @@ pip install dwave-qiskit-plugin
 
 To install from source:
 ```bash
-pip install -r requirements.txt
-python setup.py install
+pip install .
 ```
 
 Test requirements are in `tests/requirements.txt`.
 
-Note: [Configured access to D-Wave API](https://docs.ocean.dwavesys.com/en/latest/overview/sapi.html) is required.
+Note: [Configured access to D-Wave API](https://docs.dwavequantum.com/en/latest/ocean/sapi_access_basic.html) is required.
 
 
 ## License

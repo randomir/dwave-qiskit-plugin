@@ -24,17 +24,19 @@ with open(package_info_path, encoding='utf-8') as f:
     exec(f.read(), package_info)
 
 
-install_requires = ['qiskit-aqua>=0.8.0', 'dwave-system>=1.2.0']
+install_requires = ['qiskit>=1.0', 'qiskit-optimization>=0.7', 'dwave-system>=1.20']
 
-python_requires = ">=3.6"
+python_requires = ">=3.10"
 
 classifiers = [
     'License :: OSI Approved :: Apache Software License',
     'Operating System :: OS Independent',
     'Programming Language :: Python :: 3 :: Only',
-    'Programming Language :: Python :: 3.6',
-    'Programming Language :: Python :: 3.7',
-    'Programming Language :: Python :: 3.8',
+    'Programming Language :: Python :: 3.10',
+    'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: 3.12',
+    'Programming Language :: Python :: 3.13',
+    'Programming Language :: Python :: 3.14',
 ]
 
 packages = [pkg for pkg in find_packages() if pkg.startswith('dwave.plugins.qiskit')]
