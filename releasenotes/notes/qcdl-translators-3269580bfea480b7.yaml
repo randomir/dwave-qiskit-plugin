@@ -1,0 +1,9 @@
+---
+features:
+  - |
+    Adds ``circuit_to_qcdl`` and ``circuits_to_qcdls`` to translate Qiskit
+    circuits into QCDL, including additional metadata.
+
+  - |
+    Adds the dataclass ``QCDLWithMetadata`` to hold the resulting QCDL object
+    after translation from Qiskit along with the metadata.
