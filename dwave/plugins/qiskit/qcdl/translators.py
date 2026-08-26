@@ -20,7 +20,7 @@ import logging
 import numbers
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any, Iterable, Iterator
 
 import numpy as np
 
@@ -46,7 +46,7 @@ class QCDLWithMetadata:
     """A translated QCDL program along with metadata."""
 
     job_name: str
-    qcdl: dict
+    qcdl: dict | None
     qasm: str | None
     clbit_to_tag: list[str | None] | None
     circuit_metadata: dict | list[QCDLWithMetadata]
@@ -55,7 +55,7 @@ class QCDLWithMetadata:
 
 
 def _bit_register_layout(
-    registers: Iterator[ClassicalRegister | QuantumRegister],
+    registers: Iterable[ClassicalRegister | QuantumRegister],
 ) -> tuple[list[list[str | int]], list[list[str | int]]]:
     """Describe a sequence of registers for the QCDL result header.
 
