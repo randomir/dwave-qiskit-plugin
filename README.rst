@@ -126,7 +126,7 @@ Translate a Bell state Qiskit circuit into a QCDL program:
 Installation
 ============
 
-Compatible with Python 3.10+, `Qiskit <https://github.com/Qiskit/qiskit>`_ 1.0+,
+Compatible with Python 3.11+, `Qiskit <https://github.com/Qiskit/qiskit>`_ 1.0+,
 `qiskit-optimization <https://github.com/qiskit-community/qiskit-optimization>`_ 0.7+,
 and `Ocean <https://github.com/dwavesystems/dwave-ocean-sdk>`_'s dwave-system 1.20+.
 

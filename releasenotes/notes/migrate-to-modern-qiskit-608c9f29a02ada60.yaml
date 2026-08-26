@@ -6,7 +6,7 @@ prelude: >
     (tested with 2.x) and ``qiskit-optimization>=0.7``.
 upgrade:
   - |
-    Python 3.10 or newer is now required. Support for Python 3.6-3.9 is
+    Python 3.11 or newer is now required. Support for Python 3.6-3.9 is
     dropped.
   - |
     Dependencies changed from ``qiskit-aqua>=0.8.0`` to ``qiskit>=1.0`` and
