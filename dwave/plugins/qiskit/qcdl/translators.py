@@ -43,6 +43,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class QCDLWithMetadata:
+    """A translated QCDL program along with metadata."""
+
     job_name: str
     qcdl: dict
     qasm: str | None
@@ -89,6 +91,14 @@ class QiskitHeader:
 
     @classmethod
     def from_circuit(cls, circuit: QuantumCircuit) -> QiskitHeader:
+        """Build a header from a circuit's registers and metadata.
+
+        Args:
+            circuit: A Qiskit circuit.
+
+        Returns:
+            The header describing the circuit's registers and metadata.
+        """
         creg_sizes, clbit_labels = _bit_register_layout(circuit.cregs)
         qreg_sizes, qubit_labels = _bit_register_layout(circuit.qregs)
         return cls(
@@ -104,6 +114,8 @@ class QiskitHeader:
 
 
 class InstructionMemoryEstimate:
+    """Estimate for how much of a QCDL's instruction memory each operation will use."""
+
     def __init__(
         self,
         fixed_cost_per_qubit: float = 0.03282504,
@@ -137,12 +149,22 @@ class InstructionMemoryEstimate:
 
     @staticmethod
     def _make_key(op: str, qubits: int | list[int] | tuple[int, ...]) -> str:
+        """Build the lookup key for a per-qubit-combination estimate override."""
         if isinstance(qubits, int):
             qubits = [qubits]
         qubits = tuple(qubits)
         return f"{op}, {qubits}"
 
     def estimate_op(self, op: str, qubits: list[int]) -> float:
+        """Estimate the instruction memory cost of a single operation.
+
+        Args:
+            op: The operation name.
+            qubits: The qubit indices the operation acts on.
+
+        Returns:
+            The estimated instruction memory cost.
+        """
         # if you want to have a different estimate based on which qubit, it's
         # possible this way:
         key = self._make_key(op, qubits)
@@ -173,14 +195,15 @@ class InstructionMemoryEstimate:
         this is an underestimate that is intended to be accounted for by setting
         qcdl_pack_target somewhere less than 100%.
 
-        NOTE: This approach is not likely long term.
+        .. note:: This approach is not likely long term.
+
         FIXME: A more dynamic retrieval of these parameters.
 
         Args:
-            circuit (QuantumCircuit): Quantum circuit
+            circuit: A Qiskit circuit.
 
         Returns:
-            dict[int, float]: Dictionary for qubit to estimated percent full
+            Dictionary for qubit to estimated percent full.
         """
 
         pct_per_qubit: dict[int, float] = defaultdict(
@@ -206,11 +229,11 @@ def group_circuits_by_instruction_estimates(
     This is just a simple greedy algorithm which makes no attempt to optimize.
 
     Args:
-        circuits (list[QuantumCircuit]): List of QuantumCircuit
-        qcdl_pack_target (float, optional): The cutoff for each group.
+        circuits: List of Qiskit circuits.
+        qcdl_pack_target: The cutoff for each group.
 
     Returns:
-        list[list[QuantumCircuit]]: Groups of QuantumCircuit
+        Groups of :class:`QuantumCircuit`.
     """
     group_estimate: dict[int, float] = {}
     groups: list[list[QuantumCircuit]] = [[]]
@@ -239,6 +262,7 @@ def group_circuits_by_instruction_estimates(
 
 
 def _active_qubits(circuit: QuantumCircuit) -> list[int]:
+    """Return the indices of qubits that are used by at least one instruction."""
     dag = circuit_to_dag(circuit)
     # NOTE: a barrier is not counted as idle!
     active_qubits = [qubit for qubit in circuit.qubits if qubit not in dag.idle_wires()]
@@ -251,22 +275,22 @@ def circuit_to_qcdl(
     next_tag: int = 0,
     name_prefix: str = "",
 ) -> QCDLWithMetadata:
-    """Build a circuit in Aqumen's instruction format from qiskit instructions.
+    """Build a circuit in QCDL's instruction format from Qiskit instructions.
 
-    Parameters:
-        circuit (QuantumCircuit): A quantum circuit.
-        procedure (Procedure, optional): If provided, instructions will be added
+    Args:
+        circuit: A Qiskit circuit.
+        procedure: If provided, instructions will be added
             to this procedure. Otherwise, a new QCDL will be created and
             instructions added to that.
-        next_tag (int): If provided, the tags will start from here. This can
+        next_tag: If provided, the tags will start from here. This can
             help make the tags unique across multiple procedures.
-        name_prefix (str): The job name will be the circuit name with this prefix.
+        name_prefix: The job name will be the circuit name with this prefix.
 
     Raises:
         ValueError: If unsupported measurement is detected.
 
     Returns:
-        QCDLWithMetadata: The qcdl with its metadata.
+        The QCDL with its metadata.
     """
     # required for determining whether TODO
     is_top_level = procedure is None
@@ -357,6 +381,18 @@ def circuit_to_procedure(
     proc_name: str,
     next_tag: int,
 ) -> QCDLWithMetadata:
+    """Translate a circuit into a new named procedure on the given qubits.
+
+    Args:
+        circuit: A Qiskit circuit.
+        qubits: The QCDL qubits the procedure will be defined on.
+        proc_name: The name of the new procedure.
+        next_tag: The tags will start from here. This can help make the tags
+            unique across multiple procedures.
+
+    Returns:
+        The QCDL with its metadata.
+    """
     def f(*proc_qubits: QCDLModule):
         proc_qubits[0].comment(f"circuit {circuit.name}")
         operations.initialize(*proc_qubits)
@@ -379,11 +415,11 @@ def concatenate_circuits_to_qcdl(
     be unique across all the circuits.
 
     Args:
-        circuits (list[QuantumCircuit]): A list of circuits.
-        name_prefix (str, optional): Prefix for the job name. Defaults to "".
+        circuits: A list of Qiskit circuits.
+        name_prefix: Prefix for the job name. Defaults to "".
 
     Returns:
-        QCDLWithMetadata: The QCDL with its metadata.
+        The QCDL with its metadata.
     """
     active_qubits = sorted(
         set().union(*[set(_active_qubits(circuit)) for circuit in circuits])
@@ -404,12 +440,6 @@ def concatenate_circuits_to_qcdl(
                 proc_name=f"circuit_{idx}",
                 next_tag=next_tag,
             )
-            # TODO: remove?
-            # # attach qiskit header inside the qcdl dict
-            # if qcdl_metadata.qcdl is not None:
-            #     qcdl_metadata.qcdl.setdefault("metadata", {})["qiskit"] = (
-            #         make_qiskit_header(circuit)
-            #     )
 
             circuit_metadata.append(qcdl_metadata)
             next_tag = qcdl_metadata.next_tag
@@ -453,27 +483,25 @@ def concatenate_circuits_to_qcdl(
 def circuits_to_qcdls(
     circuits: list[QuantumCircuit],
     job_id: str = "job",
-    qcdl_pack_target: numbers.Real = 0.4,
+    qcdl_pack_target: numbers.Real | bool = True,
 ) -> Iterator[QCDLWithMetadata]:
-    """Convert a list of QuantumCircuit into a list of QCDLWithMetadata
+    """Convert a list of :class:`QuantumCircuit` into a list of :class:`QCDLWithMetadata`.
 
     We're playing a game of blackjack: how close can we get to 100% full without
     going over. This depends on our ability to estimate how full the QCDL will
     be before we attempt to compile it. To account for the approximations in the
     estimation, we target less than 100% full.
 
-    NOTE: the more instructions a QCDL has, the longer it will take to compile.
+    .. note:: The more instructions a QCDL has, the longer it will take to compile.
 
     Args:
-        circuits (list[QuantumCircuit]): The QuantumCircuit instances
-        job_id (str, optional): The Qiskit Job ID, used in naming the QCDLs.
-            Defaults to "job".
-        qcdl_pack_target (numbers.Real, optional): How to full to pack the QCDLs.
-            If False, each QuantumCircuit will be in a separate QCDLs. Defaults
-            to 0.75.
+        circuits: The Qiskit :class:`QuantumCircuit` instances.
+        job_id: The Qiskit Job ID, used in naming the QCDLs. Defaults to "job".
+        qcdl_pack_target: How full to pack the QCDLs. If False, each :class:`QuantumCircuit`
+            will be in a separate QCDLs. If True, defaults to 0.4.
 
     Yields:
-        Iterator[QCDLWithMetadata]: The QCDL instances.
+        The QCDL instances.
     """
     if qcdl_pack_target is True:
         qcdl_pack_target = 0.4
@@ -499,6 +527,15 @@ def circuits_to_qcdls(
 def make_qiskit_counts(
     result: Result, metadata: QCDLWithMetadata
 ) -> dict[str, int]:
+    """Build a Qiskit-style counts dict from a QCDL result and its metadata.
+
+    Args:
+        result: The QCDL result.
+        metadata: The metadata produced when the circuit was translated to QCDL.
+
+    Returns:
+        A mapping of bitstrings to the number of shots observed for them.
+    """
     memory = [None] * len(metadata.clbit_to_tag)
     measurements = result.get_measurements()
     for clbit_idx, tag in enumerate(metadata.clbit_to_tag):
