@@ -271,7 +271,7 @@ def _active_qubits(circuit: QuantumCircuit) -> list[int]:
 
 def circuit_to_qcdl(
     circuit: QuantumCircuit,
-    procedure: Procedure | None = None,
+    target_procedure: Procedure | None = None,
     next_tag: int = 0,
     name_prefix: str = "",
 ) -> QCDLWithMetadata:
@@ -279,7 +279,7 @@ def circuit_to_qcdl(
 
     Args:
         circuit: A Qiskit circuit.
-        procedure: If provided, instructions will be added
+        target_procedure: If provided, instructions will be added
             to this procedure. Otherwise, a new QCDL will be created and
             instructions added to that.
         next_tag: If provided, the tags will start from here. This can
@@ -292,19 +292,18 @@ def circuit_to_qcdl(
     Returns:
         The QCDL with its metadata.
     """
-    # required for determining whether TODO
-    is_top_level = procedure is None
+    is_top_level = target_procedure is None
 
     if is_top_level:
         if circuit.num_clbits == 0:
             raise ValueError(f"circuit {circuit.name} has no measurements")
 
         qcdl_program = QCDLCircuit()
-        procedure = qcdl_program.main
+        target_procedure = qcdl_program.main
         active_qubits = _active_qubits(circuit)
         if len(active_qubits) == 0:
             raise ValueError(f"no active qubits found in circuit {circuit.name}")
-        operations.initialize(*[procedure.q(q) for q in active_qubits])
+        operations.initialize(*[target_procedure.q(q) for q in active_qubits])
 
     def _numeric_params(instruction) -> list:
         # ParameterExpressions occasionally show up unresolved; pass such values
@@ -320,12 +319,15 @@ def circuit_to_qcdl(
 
     clbit_to_tag: list[str | None] = [None] * circuit.num_clbits
 
-    for instruction, qubits, clbits in circuit.data:
+    for circuit_instruction in circuit.data:
+        instruction = circuit_instruction.operation
+        qubits, clbits = circuit_instruction.qubits, circuit_instruction.clbits
+
         # check if `instruction.condition` exists and evaluates True
         if getattr(instruction, "condition", None):
-            raise NotImplementedError("qiskit-aqumen does not support control-flow")
+            raise NotImplementedError("QCDL translators do not support control-flow")
 
-        qcdl_args = [procedure.q(circuit.qubits.index(q)) for q in qubits]
+        qcdl_args = [target_procedure.q(circuit.qubits.index(q)) for q in qubits]
 
         qcdl_kwargs = {}
         if instruction.name == "measure":
@@ -398,7 +400,7 @@ def circuit_to_procedure(
         operations.initialize(*proc_qubits)
         return circuit_to_qcdl(
             circuit=circuit,
-            procedure=proc_qubits[0].procedure,
+            target_procedure=proc_qubits[0].procedure,
             next_tag=next_tag,
         )
 
@@ -536,8 +538,13 @@ def make_qiskit_counts(
     Returns:
         A mapping of bitstrings to the number of shots observed for them.
     """
+    if metadata.clbit_to_tag is None:
+        raise ValueError(
+            "metadata has no clbit_to_tag; pass per-circuit metadata, e.g. an "
+            "entry from metadata.circuit_metadata"
+        )
     memory = [None] * len(metadata.clbit_to_tag)
-    measurements = result.get_measurements()
+    measurements = result.measurements
     for clbit_idx, tag in enumerate(metadata.clbit_to_tag):
         mem_idx = len(metadata.clbit_to_tag) - clbit_idx - 1
         if tag is None:
@@ -565,7 +572,7 @@ def make_qiskit_counts(
         tag_mem: np.ndarray = format_memory(
             tagged_measurements,
             register=register,
-            num_shots=result.num_shots,
+            shots=result.num_shots,
         )
         # If there were multiple measurements into the same clbit from the same
         # qubit, then we take the last measurement.
