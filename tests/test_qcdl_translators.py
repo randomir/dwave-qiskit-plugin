@@ -17,8 +17,10 @@
 import random
 import re
 
+import numpy as np
 import pytest
-from dwave.gate.qcdl import print_qcdl
+from dwave.gate.qcdl import print_qcdl, qcdl
+from dwave.gate.results import Result
 from qiskit.circuit import (
     ClassicalRegister,
     Clbit,
@@ -32,9 +34,12 @@ from qiskit_aer import QasmSimulator
 from dwave.plugins.qiskit.qcdl.translators import (
     InstructionMemoryEstimate,
     _active_qubits,
+    circuit_to_procedure,
     circuit_to_qcdl,
+    circuits_to_qcdls,
     concatenate_circuits_to_qcdl,
     group_circuits_by_instruction_estimates,
+    make_qiskit_counts,
 )
 
 
@@ -371,4 +376,82 @@ def test_qiskit_headers_are_per_circuit_not_combined():
     # headers are different, we gave it two different circuits
     headers = [v["qiskit"] for v in metadata.values()]
     assert headers[0] != headers[1]
+
+
+def test_circuit_to_procedure():
+    """A circuit translated via circuit_to_procedure is attached to a new,
+    named procedure instead of producing its own standalone QCDL."""
+    qc = QuantumCircuit(1, 1, name="my_circuit")
+    qc.x(0)
+    qc.measure(0, 0)
+
+    captured = {}
+
+    @qcdl(1)
+    def main(**kwargs):
+        qubits = [kwargs["q0"]]
+        captured["metadata"] = circuit_to_procedure(
+            circuit=qc, qubits=qubits, proc_name="my_proc", next_tag=0
+        )
+
+    qcdl_program = main().model_dump()
+    metadata = captured["metadata"]
+
+    assert metadata.qcdl is None
+    assert metadata.clbit_to_tag == ["0"]
+
+    qcdl_str = print_qcdl(qcdl_program, to_Display=False)
+    assert "my_proc" in qcdl_str
+
+
+def test_circuits_to_qcdls_without_packing():
+    """With packing disabled, each circuit gets its own QCDL."""
+    circuits = [QuantumCircuit(1, 1, name=f"circ{i}") for i in range(2)]
+    for qc in circuits:
+        qc.measure(0, 0)
+
+    results = list(circuits_to_qcdls(circuits, job_id="job", qcdl_pack_target=False))
+
+    assert len(results) == len(circuits)
+    for idx, (qwm, qc) in enumerate(zip(results, circuits)):
+        assert qwm.qcdl is not None
+        assert qwm.job_name == f"job[{idx}]_{qc.name}"
+
+
+def test_circuits_to_qcdls_with_packing():
+    """With a generous pack target, circuits are combined into one QCDL."""
+    circuits = [QuantumCircuit(1, 1, name=f"circ{i}") for i in range(3)]
+    for qc in circuits:
+        qc.measure(0, 0)
+
+    results = list(circuits_to_qcdls(circuits, job_id="job", qcdl_pack_target=1000))
+
+    assert len(results) == 1
+    assert results[0].qcdl is not None
+    assert len(results[0].circuit_metadata) == len(circuits)
+
+
+def test_make_qiskit_counts():
+    """make_qiskit_counts should convert tagged measurements into Qiskit counts."""
+    qc = QuantumCircuit(1, 1)
+    qc.measure(0, 0)
+    qcdl_metadata = circuit_to_qcdl(qc)
+    assert qcdl_metadata.clbit_to_tag == ["0"]
+
+    result = Result(num_shots=3, measurements={"0": [np.array(["0", "1", "0"])]})
+    counts = make_qiskit_counts(result, qcdl_metadata)
+    assert counts == {"0": 2, "1": 1}
+
+
+def test_make_qiskit_counts_rejects_aggregated_metadata():
+    """make_qiskit_counts requires per-circuit metadata, not a concatenated
+    QCDL's aggregated metadata (whose clbit_to_tag is None)."""
+    qc1 = QuantumCircuit(1, 1)
+    qc1.measure(0, 0)
+    qc2 = QuantumCircuit(1, 1)
+    qc2.measure(0, 0)
+    aggregated = concatenate_circuits_to_qcdl([qc1, qc2])
+
+    with pytest.raises(ValueError, match="clbit_to_tag"):
+        make_qiskit_counts(Result(num_shots=1), aggregated)
 
