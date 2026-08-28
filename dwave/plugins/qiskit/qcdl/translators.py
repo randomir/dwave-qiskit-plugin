@@ -24,11 +24,9 @@ from typing import TYPE_CHECKING, Any, Iterable, Iterator
 
 import numpy as np
 
-from dwave.gate.results import Result
 from dwave.gate.qcdl import QCDLModule, operations, procedure, qcdl
 from dwave.gate.qcdl.qcdl_circuit import QCDLCircuit
-from dwave.gate.results import format_memory
-from dwave.cloud.exceptions import InvalidAPIResponseError
+from dwave.gate.results import Result, format_memory
 
 from qiskit import QuantumCircuit, qasm2
 from qiskit.converters import circuit_to_dag
@@ -424,7 +422,7 @@ def concatenate_circuits_to_qcdl(
         The QCDL with its metadata.
     """
     active_qubits = sorted(
-        set().union(*[set(_active_qubits(circuit)) for circuit in circuits])
+        set().union(*map(_active_qubits, circuits))
     )
     if len(active_qubits) == 0:
         raise ValueError("no active qubits found in any circuit")
@@ -457,9 +455,8 @@ def concatenate_circuits_to_qcdl(
         # use the job_name if it exists otherwise make a unique name for reference later
         job_key = qwm.job_name or f"{job_name}_{idx}"  # ensures a valid key
 
-        # check for existing metadata/create dict as needed
-        if "metadata" not in qcdl_input:
-            qcdl_input["metadata"] = {}
+        # create metadata dict as needed
+        qcdl_input.setdefault("metadata", {})
 
         # this moves all the needed metadata to the executed_qcdl per circuit
         md = qcdl_input["metadata"].get(job_key, {})
@@ -485,7 +482,8 @@ def concatenate_circuits_to_qcdl(
 def circuits_to_qcdls(
     circuits: list[QuantumCircuit],
     job_id: str = "job",
-    qcdl_pack_target: numbers.Real | bool = True,
+    pack_qcdls: bool = True,
+    qcdl_pack_target: numbers.Real = 0.4,
 ) -> Iterator[QCDLWithMetadata]:
     """Convert a list of :class:`QuantumCircuit` into a list of :class:`QCDLWithMetadata`.
 
@@ -499,18 +497,13 @@ def circuits_to_qcdls(
     Args:
         circuits: The Qiskit :class:`QuantumCircuit` instances.
         job_id: The Qiskit Job ID, used in naming the QCDLs. Defaults to "job".
-        qcdl_pack_target: How full to pack the QCDLs. If False, each :class:`QuantumCircuit`
-            will be in a separate QCDLs. If True, defaults to 0.4.
+        pack_qcdls: Whether to pack the QCDLs.
+        qcdl_pack_target: How full to pack the QCDLs. Defaults to 0.4.
 
     Yields:
         The QCDL instances.
     """
-    if qcdl_pack_target is True:
-        qcdl_pack_target = 0.4
-    elif qcdl_pack_target is False:
-        qcdl_pack_target = 0.0
-
-    if qcdl_pack_target > 0:
+    if pack_qcdls and qcdl_pack_target > 0:
         groups = group_circuits_by_instruction_estimates(
             circuits, qcdl_pack_target=qcdl_pack_target
         )
@@ -551,9 +544,9 @@ def make_qiskit_counts(
             memory[mem_idx] = np.array(["0"] * result.num_shots)
             continue
         if not measurements:
-            raise InvalidAPIResponseError("no tagged measurements are available")
+            raise ValueError("no tagged measurements are available")
         elif tag not in measurements:
-            raise InvalidAPIResponseError(
+            raise ValueError(
                 f"{tag=} for clbit={clbit_idx} is not found in tagged measurements"
             )
 
@@ -566,7 +559,7 @@ def make_qiskit_counts(
         # since each measurement was given a unique tag, only one qubit is
         # expected to have that tag.
         if len(register) != 1:
-            raise InvalidAPIResponseError(
+            raise ValueError(
                 f"invalid register {register} for clbit={clbit_idx} with {tag=}"
             )
         tag_mem: np.ndarray = format_memory(
