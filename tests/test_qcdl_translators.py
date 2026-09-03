@@ -29,7 +29,6 @@ from qiskit.circuit import (
     Qubit,
     instruction,
 )
-from qiskit_aer import QasmSimulator
 
 from dwave.plugins.qiskit.qcdl.translators import (
     InstructionMemoryEstimate,
@@ -41,12 +40,6 @@ from dwave.plugins.qiskit.qcdl.translators import (
     group_circuits_by_instruction_estimates,
     make_qiskit_counts,
 )
-
-
-def circuit_to_counts(circuit: QuantumCircuit, shots=10000) -> dict:
-    backend = QasmSimulator()
-    result = backend.run(circuit, shots=shots).result()
-    return result.get_counts()
 
 
 def test_measurement_only_circuit():
@@ -233,10 +226,7 @@ def test_no_measurments():
         circuit_to_qcdl(qc)
 
 
-def _check_circuit_concatenation(
-    circuits: list[QuantumCircuit],
-    shots: int = 123,
-) -> None:
+def _check_circuit_concatenation(circuits: list[QuantumCircuit]) -> None:
     num_circuits = len(circuits)
     qcdl_metadata = concatenate_circuits_to_qcdl(circuits=circuits)
     assert len(qcdl_metadata.circuit_metadata) == num_circuits
@@ -299,9 +289,7 @@ def test_circuit_concatenation(measure_reps):
             qc.measure_all()
         circuits.append(qc)
 
-    shots = random.randint(10, 100)
-
-    _check_circuit_concatenation(circuits=circuits, shots=shots)
+    _check_circuit_concatenation(circuits=circuits)
 
 
 @pytest.mark.parametrize("qubits_used", [[0], [1], [0, 1], [3, 4, 5]])

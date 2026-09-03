@@ -338,9 +338,6 @@ def circuit_to_qcdl(
 
         if hasattr(operations, instruction.name):
             getattr(operations, instruction.name)(*qcdl_args, **qcdl_kwargs)
-        elif instruction.name == "barrier":
-            target, barrier_qubits = qcdl_args[0], qcdl_args[1:]
-            target.barrier(*barrier_qubits, **qcdl_kwargs)
         else:
             raise NotImplementedError(
                 f"operation {instruction.name} is not implemented"
