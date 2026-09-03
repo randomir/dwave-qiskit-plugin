@@ -20,6 +20,7 @@ import logging
 import numbers
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
+from itertools import accumulate, pairwise
 from typing import TYPE_CHECKING, Any, Iterable, Iterator
 
 import numpy as np
@@ -30,7 +31,6 @@ from dwave.gate.results import Result, format_memory
 
 from qiskit import QuantumCircuit, qasm2
 from qiskit.converters import circuit_to_dag
-from qiskit.result.postprocess import _separate_bitstring
 
 if TYPE_CHECKING:
     from dwave.gate.qcdl.components import Procedure
@@ -573,8 +573,17 @@ def make_qiskit_counts(
 
     memory = np.array(memory)
     counts = dict(Counter(map("".join, memory.transpose())))
-    creg_sizes = metadata.qiskit_header["creg_sizes"]
-    counts = {
-        _separate_bitstring(k, creg_sizes=creg_sizes): v for k, v in counts.items()
-    }
+
+    if creg_sizes := metadata.qiskit_header["creg_sizes"]:
+        # Registers are listed in first-seen order, but Qiskit's bitstring
+        # convention puts the last-declared register in the leftmost/most
+        # significant characters, so compute boundaries in reverse order.
+        sizes = (size for _, size in reversed(creg_sizes))
+        bounds = list(pairwise(accumulate(sizes, initial=0)))
+
+        qiskit_counts = {}
+        for bitstring, v in counts.items():
+            qiskit_counts[" ".join(bitstring[i:j] for i, j in bounds)] = v
+        return qiskit_counts
+
     return counts

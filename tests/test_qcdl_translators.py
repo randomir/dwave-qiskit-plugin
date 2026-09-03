@@ -455,3 +455,37 @@ def test_make_qiskit_counts_rejects_aggregated_metadata():
     with pytest.raises(ValueError, match="clbit_to_tag"):
         make_qiskit_counts(Result(num_shots=1), aggregated)
 
+
+def test_make_qiskit_counts_with_loose_clbits():
+    """Circuits with loose clbits (no classical register, empty creg_sizes)
+    must not have every bitstring collapsed into a single '' key."""
+    qc = QuantumCircuit([Qubit()], [Clbit()])
+    qc.measure(0, 0)
+    qcdl_metadata = circuit_to_qcdl(qc)
+    assert qcdl_metadata.qiskit_header["creg_sizes"] == []
+
+    result = Result(num_shots=3, measurements={"0": [np.array(["0", "1", "0"])]})
+    counts = make_qiskit_counts(result, qcdl_metadata)
+    assert counts == {"0": 2, "1": 1}
+
+
+def test_make_qiskit_counts_with_multiple_registers():
+    """Bitstrings must be split into one space-joined key per shot, with a
+    substring per register, ordered last-declared register first."""
+    qr = QuantumRegister(2, "qr")
+    cr0 = ClassicalRegister(1, "c")
+    cr1 = ClassicalRegister(1, "d")
+    qc = QuantumCircuit(qr, cr0, cr1)
+    qc.measure(qr[0], cr0[0])
+    qc.measure(qr[1], cr1[0])
+
+    qcdl_metadata = circuit_to_qcdl(qc)
+    assert qcdl_metadata.clbit_to_tag == ["0", "1"]
+
+    result = Result(
+        num_shots=2,
+        measurements={"0": [np.array(["1", "0"])], "1": [np.array(["0", "1"])]},
+    )
+    counts = make_qiskit_counts(result, qcdl_metadata)
+    assert counts == {"0 1": 1, "1 0": 1}
+
