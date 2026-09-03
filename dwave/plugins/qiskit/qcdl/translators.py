@@ -208,7 +208,7 @@ class InstructionMemoryEstimate:
             lambda: self._fixed_cost_per_qubit
         )
         for inst in circuit.data:
-            qubits = [circuit.qubits.index(q) for q in inst.qubits]
+            qubits = [circuit.find_bit(q).index for q in inst.qubits]
             estimate = self.estimate_op(op=inst.operation.name, qubits=qubits)
             for q in qubits:
                 pct_per_qubit[q] += estimate
@@ -244,7 +244,9 @@ def group_circuits_by_instruction_estimates(
             q: circuit_estimate.get(q, 0) + group_estimate.get(q, 0)
             for q in list(circuit_estimate) + list(group_estimate)
         }
-        included_group_estimate_max = max(included_group_estimate.values())
+        # a circuit with no instructions contributes no per-qubit estimate, so
+        # this can be empty; default to 0 instead of letting max() raise.
+        included_group_estimate_max = max(included_group_estimate.values(), default=0)
 
         if included_group_estimate_max > qcdl_pack_target and len(groups[-1]) > 0:
             # put this circuit in the next group
@@ -263,8 +265,8 @@ def _active_qubits(circuit: QuantumCircuit) -> list[int]:
     """Return the indices of qubits that are used by at least one instruction."""
     dag = circuit_to_dag(circuit)
     # NOTE: a barrier is not counted as idle!
-    active_qubits = [qubit for qubit in circuit.qubits if qubit not in dag.idle_wires()]
-    return [circuit.qubits.index(q) for q in active_qubits]
+    idle = set(dag.idle_wires())
+    return [circuit.find_bit(q).index for q in circuit.qubits if q not in idle]
 
 
 def circuit_to_qcdl(
@@ -292,15 +294,16 @@ def circuit_to_qcdl(
     """
     is_top_level = target_procedure is None
 
-    if is_top_level:
-        if circuit.num_clbits == 0:
-            raise ValueError(f"circuit {circuit.name} has no measurements")
+    if circuit.num_clbits == 0:
+        raise ValueError(f"circuit {circuit.name} has no measurements")
 
+    active_qubits = _active_qubits(circuit)
+    if len(active_qubits) == 0:
+        raise ValueError(f"no active qubits found in circuit {circuit.name}")
+
+    if is_top_level:
         qcdl_program = QCDLCircuit()
         target_procedure = qcdl_program.main
-        active_qubits = _active_qubits(circuit)
-        if len(active_qubits) == 0:
-            raise ValueError(f"no active qubits found in circuit {circuit.name}")
         operations.initialize(*[target_procedure.q(q) for q in active_qubits])
 
     def _numeric_params(instruction) -> list:
@@ -325,13 +328,13 @@ def circuit_to_qcdl(
         if getattr(instruction, "condition", None):
             raise NotImplementedError("QCDL translators do not support control-flow")
 
-        qcdl_args = [target_procedure.q(circuit.qubits.index(q)) for q in qubits]
+        qcdl_args = [target_procedure.q(circuit.find_bit(q).index) for q in qubits]
 
         qcdl_kwargs = {}
         if instruction.name == "measure":
             tag = str(next_tag)
             next_tag += 1
-            clbit_to_tag[circuit.clbits.index(clbits[0])] = tag
+            clbit_to_tag[circuit.find_bit(clbits[0]).index] = tag
             qcdl_kwargs["tag"] = tag
 
         qcdl_args.extend(_numeric_params(instruction))
@@ -344,14 +347,17 @@ def circuit_to_qcdl(
             )
 
     qiskit_header = QiskitHeader.from_circuit(circuit)
+    qiskit_header_dict = asdict(qiskit_header)
+    qasm = qasm2.dumps(circuit)
+    circuit_metadata = {**(circuit.metadata or {})}
 
     if is_top_level:
         qdict = qcdl_program.to_model().model_dump()
 
         qdict.setdefault("metadata", {}).update(
-            qiskit=asdict(qiskit_header),
-            qasm=qasm2.dumps(circuit),
-            circuit_metadata={**(circuit.metadata or {})},
+            qiskit=qiskit_header_dict,
+            qasm=qasm,
+            circuit_metadata=circuit_metadata,
             clbit_to_tag=clbit_to_tag,
             next_tag=next_tag,
         )
@@ -364,10 +370,10 @@ def circuit_to_qcdl(
     return QCDLWithMetadata(
         job_name=job_name,
         qcdl=qdict,
-        qasm=qasm2.dumps(circuit),
+        qasm=qasm,
         clbit_to_tag=clbit_to_tag,
-        circuit_metadata={**(circuit.metadata or {})},
-        qiskit_header=asdict(qiskit_header),
+        circuit_metadata=circuit_metadata,
+        qiskit_header=qiskit_header_dict,
         next_tag=next_tag,
     )
 
@@ -397,6 +403,9 @@ def circuit_to_procedure(
             circuit=circuit,
             target_procedure=proc_qubits[0].procedure,
             next_tag=next_tag,
+            # proc_name is unique per circuit (includes its index), so use it
+            # to keep job_name unique even for duplicate/empty circuit names.
+            name_prefix=proc_name,
         )
 
     return procedure(f=f, proc_name=proc_name)(*qubits)
@@ -448,9 +457,8 @@ def concatenate_circuits_to_qcdl(
     if not isinstance(qcdl_input, dict):
         raise TypeError("qcdl_input must be a dict")
 
-    for idx, qwm in enumerate(circuit_metadata):
-        # use the job_name if it exists otherwise make a unique name for reference later
-        job_key = qwm.job_name or f"{job_name}_{idx}"  # ensures a valid key
+    for qwm in circuit_metadata:
+        job_key = qwm.job_name
 
         # create metadata dict as needed
         qcdl_input.setdefault("metadata", {})

@@ -69,6 +69,18 @@ def test_circuit_with_entangling_ops():
     assert qcdl.clbit_to_tag == [None, None, "0", "1"]
 
 
+def test_barrier():
+    """Barrier is translated via the sole operations.barrier code path."""
+    qc = QuantumCircuit(2, 2)
+    qc.h(0)
+    qc.barrier(0, 1)
+    qc.measure([0, 1], [0, 1])
+
+    qcdl_metadata = circuit_to_qcdl(qc)
+    qcdl_str = print_qcdl(qcdl_metadata.qcdl, to_Display=False)
+    assert "barrier" in qcdl_str
+
+
 def test_rotation_from_instruction_params():
     """Test that instruction parameters are used for rotation."""
     qc = QuantumCircuit(2)
@@ -226,6 +238,32 @@ def test_no_measurments():
         circuit_to_qcdl(qc)
 
 
+@pytest.mark.parametrize("qcdl_pack_target", [False, True])
+def test_no_measurements_rejected_regardless_of_packing(qcdl_pack_target):
+    """A measurement-free circuit must be rejected the same way whether or
+    not it ends up packed together with other circuits."""
+    qc_ok = QuantumCircuit(1, 1, name="ok")
+    qc_ok.measure(0, 0)
+
+    qc_no_measure = QuantumCircuit(1, name="no_measure")
+    qc_no_measure.h(0)
+
+    with pytest.raises(ValueError, match="no measurements"):
+        list(
+            circuits_to_qcdls(
+                [qc_ok, qc_no_measure], qcdl_pack_target=qcdl_pack_target
+            )
+        )
+
+
+def test_circuits_to_qcdls_with_empty_first_circuit():
+    """A circuit with no instructions must not crash instruction-estimate
+    grouping with an opaque max() error; it should surface the normal
+    validation error instead."""
+    with pytest.raises(ValueError, match="no active qubits"):
+        list(circuits_to_qcdls([QuantumCircuit(1, 1)]))
+
+
 def _check_circuit_concatenation(circuits: list[QuantumCircuit]) -> None:
     num_circuits = len(circuits)
     qcdl_metadata = concatenate_circuits_to_qcdl(circuits=circuits)
@@ -364,6 +402,29 @@ def test_qiskit_headers_are_per_circuit_not_combined():
     # headers are different, we gave it two different circuits
     headers = [v["qiskit"] for v in metadata.values()]
     assert headers[0] != headers[1]
+
+
+@pytest.mark.parametrize("name", ["rb_seq", ""])
+def test_concatenate_circuits_with_duplicate_names(name):
+    """Circuits sharing a name (including an empty name) must not collide;
+    each must get a unique, non-empty job_name and its own metadata entry."""
+    qc1 = QuantumCircuit(1, 1, name=name)
+    qc1.h(0)
+    qc1.measure(0, 0)
+    qc2 = QuantumCircuit(1, 1, name=name)
+    qc2.x(0)
+    qc2.measure(0, 0)
+
+    result = concatenate_circuits_to_qcdl([qc1, qc2])
+    job_names = [qwm.job_name for qwm in result.circuit_metadata]
+
+    assert all(job_names)
+    assert len(set(job_names)) == len(job_names)
+
+    metadata = result.qcdl["metadata"]
+    assert len(metadata) == 2
+    for qwm in result.circuit_metadata:
+        assert metadata[qwm.job_name]["qasm"] == qwm.qasm
 
 
 def test_circuit_to_procedure():
