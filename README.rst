@@ -123,6 +123,44 @@ Translate a Bell state Qiskit circuit into a QCDL program:
        measure([q1], q1, log=True, tag="1")
     end quantum
 
+DWaveProvider
+=============
+
+``DWaveProvider`` exposes D-Wave's Leap QCDL simulator solvers
+through the standard Qiskit provider/backend interface: circuits passed to
+``QCDLSimulatorBackend.run()`` are translated to QCDL, submitted to a Leap solver,
+and the answers are returned as a ``qiskit.result.Result``. Leap credentials are
+picked up from the standard `dwave-cloud-client configuration
+<https://docs.dwavequantum.com/en/latest/ocean/api_ref_cloud/config.html>`_
+(configuration file or environment variables), or can be passed to the
+provider directly.
+
+Examples
+--------
+
+Run a Bell state circuit on a Leap QCDL solver:
+
+.. code-block:: python
+
+    >>> from qiskit import QuantumCircuit
+    >>> from dwave.plugins.qiskit import DWaveProvider
+    ...
+    >>> qc = QuantumCircuit(2, 2, name="bell")
+    >>> qc.h(0)
+    >>> qc.cx(0, 1)
+    >>> qc.measure([0, 1], [0, 1])
+    ...
+    >>> with DWaveProvider() as provider:
+    ...     backend = provider.get_backend()
+    ...     job = backend.run(qc, shots=1000)
+    ...     counts = job.result().get_counts()
+    >>> counts                                      # doctest: +SKIP
+    {'00': 512, '11': 488}
+
+``run()`` also accepts a list of circuits; by default they are packed into as
+few QCDL programs as estimated to fit (disable with ``qcdl_pack_target=False``
+to submit one QCDL program per circuit).
+
 Installation
 ============
 
