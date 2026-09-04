@@ -21,7 +21,7 @@ from dwave.cloud import Client
 from qiskit.providers.exceptions import QiskitBackendNotFoundError
 from qiskit.providers.providerutils import filter_backends
 
-from dwave.plugins.qiskit.leap.backend import QCDLBackend
+from dwave.plugins.qiskit.leap.backend import QCDLSimulatorBackend
 
 __all__ = ["DWaveProvider"]
 
@@ -60,8 +60,8 @@ class DWaveProvider:
             self._client = Client.from_config(**self._config)
         return self._client
 
-    def backends(self, name: str | None = None, **kwargs) -> list[QCDLBackend]:
-        """List QCDL backends available on Leap.
+    def backends(self, name: str | None = None, **kwargs) -> list[QCDLSimulatorBackend]:
+        """List all QCDL simulator backends available on Leap.
 
         Backends are listed newest solver first.
 
@@ -75,16 +75,18 @@ class DWaveProvider:
         """
         filters = dict(
             supported_problem_types__contains="qcdl",
+            category="software-gate",
             order_by="-properties.version",
         )
         if name is not None:
             filters["name"] = name
         solvers = self._get_client().get_solvers(**filters)
-        backends = [QCDLBackend(solver, provider=self) for solver in solvers]
+
+        backends = [QCDLSimulatorBackend(solver, provider=self) for solver in solvers]
         return filter_backends(backends, **kwargs)
 
-    def get_backend(self, name: str | None = None, **kwargs) -> QCDLBackend:
-        """Return a single QCDL backend matching the specified filtering.
+    def get_backend(self, name: str | None = None, **kwargs) -> QCDLSimulatorBackend:
+        """Return a single QCDL simulator backend matching the specified filtering.
 
         When more than one backend matches, the one with the newest solver
         version is returned.

@@ -33,7 +33,7 @@ from dwave.plugins.qiskit.qcdl.translators import QCDLWithMetadata, make_qiskit_
 if TYPE_CHECKING:
     from dwave.cloud.computation import Future
 
-    from dwave.plugins.qiskit.leap.backend import QCDLBackend
+    from dwave.plugins.qiskit.leap.backend import QCDLSimulatorBackend
 
 __all__ = ["QCDLJob"]
 
@@ -76,7 +76,8 @@ class QCDLJob(JobV1):
     """A Qiskit job for circuits submitted to a D-Wave Leap QCDL solver.
 
     A single job may span multiple QCDL problems when the circuits given to
-    :meth:`.QCDLBackend.run` are translated into more than one QCDL program.
+    :meth:`.QCDLSimulatorBackend.run` are translated into more than one QCDL
+    program.
 
     Args:
         backend: The backend the job was submitted through.
@@ -89,7 +90,7 @@ class QCDLJob(JobV1):
 
     def __init__(
         self,
-        backend: QCDLBackend,
+        backend: QCDLSimulatorBackend,
         job_id: str,
         futures: list[Future],
         qcdls: list[QCDLWithMetadata],

@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from dwave.plugins.qiskit.leap.backend import QCDLBackend
+from dwave.plugins.qiskit.leap.backend import QCDLSimulatorBackend
 from dwave.plugins.qiskit.leap.job import QCDLJob
 from dwave.plugins.qiskit.leap.provider import DWaveProvider
 
-__all__ = ["DWaveProvider", "QCDLBackend", "QCDLJob"]
+__all__ = ["DWaveProvider", "QCDLJob", "QCDLSimulatorBackend"]

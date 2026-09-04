@@ -33,12 +33,13 @@ from qiskit.providers import JobError, JobStatus, JobTimeoutError
 from qiskit.providers.exceptions import QiskitBackendNotFoundError
 
 from dwave.plugins.qiskit import DWaveProvider
-from dwave.plugins.qiskit.leap import QCDLBackend, QCDLJob
+from dwave.plugins.qiskit.leap import QCDLJob, QCDLSimulatorBackend
 from dwave.plugins.qiskit.leap.backend import _QCDL_STANDARD_GATE_NAMES
 from dwave.plugins.qiskit.leap.job import _future_status
 
 
 def make_solver(**kwargs) -> QCDLSolver:
+    kwargs.setdefault("category", "software-gate")
     return QCDLSolver(client=mock.Mock(), data=qcdl_solver_data(**kwargs))
 
 
@@ -137,11 +138,15 @@ def test_provider_lists_qcdl_backends():
     client_cls.from_config.assert_called_once()
     call_kwargs = client_cls.from_config.call_args.kwargs
     assert call_kwargs["client"] == "base"
+    assert call_kwargs["connection_close"] is True
     assert call_kwargs["token"] == "secret"
-    assert client.get_solvers.call_args.kwargs["supported_problem_types__contains"] == "qcdl"
+    solver_filters = client.get_solvers.call_args.kwargs
+    assert solver_filters["supported_problem_types__contains"] == "qcdl"
+    assert solver_filters["category"] == "software-gate"
+    assert solver_filters["order_by"] == "-properties.version"
 
     assert len(backends) == 1
-    assert isinstance(backends[0], QCDLBackend)
+    assert isinstance(backends[0], QCDLSimulatorBackend)
     assert backends[0].name == "qcdl_mock_solver"
     assert backends[0].provider is provider
 
@@ -157,10 +162,9 @@ def test_provider_backends_name_filter():
     assert client.get_solvers.call_args.kwargs["name"] == "some_solver"
 
 
-@pytest.mark.parametrize("num_solvers", [0, 2])
-def test_get_backend_requires_single_match(num_solvers):
+def test_get_backend_raises_when_none_match():
     client = mock.Mock()
-    client.get_solvers.return_value = [make_solver() for _ in range(num_solvers)]
+    client.get_solvers.return_value = []
 
     with mock.patch("dwave.plugins.qiskit.leap.provider.Client") as client_cls:
         client_cls.from_config.return_value = client
@@ -201,8 +205,13 @@ def test_provider_context_manager_closes_client():
 # backend
 
 
+def test_backend_rejects_non_simulator_solver():
+    with pytest.raises(ValueError, match="not a gate-model simulator"):
+        QCDLSimulatorBackend(make_solver(category="hybrid"))
+
+
 def test_target_gates_and_connectivity():
-    backend = QCDLBackend(make_solver())
+    backend = QCDLSimulatorBackend(make_solver())
     target = backend.target
 
     assert set(target.operation_names) == set(_QCDL_STANDARD_GATE_NAMES) | {"measure"}
@@ -212,19 +221,19 @@ def test_target_gates_and_connectivity():
 
 
 def test_target_num_qubits_from_solver():
-    backend = QCDLBackend(make_solver(num_qubits=8))
+    backend = QCDLSimulatorBackend(make_solver(num_qubits=8))
     assert backend.target.num_qubits == 8
 
 
 def test_default_options():
-    backend = QCDLBackend(make_solver())
+    backend = QCDLSimulatorBackend(make_solver())
     assert dict(backend.options) == {
         "shots": 1024, "time_limit": None, "label": None, "qcdl_pack_target": True,
     }
 
 
 def test_shots_validated_against_max_shots(monkeypatch):
-    backend = QCDLBackend(make_solver())  # mock solver has max_shots=10000
+    backend = QCDLSimulatorBackend(make_solver())  # mock solver has max_shots=10000
     patch_sample_qcdl(monkeypatch, backend.solver, [StubFuture()])
 
     with pytest.raises(ValueError, match="shots"):
@@ -232,19 +241,19 @@ def test_shots_validated_against_max_shots(monkeypatch):
 
 
 def test_unknown_run_option_rejected():
-    backend = QCDLBackend(make_solver())
+    backend = QCDLSimulatorBackend(make_solver())
     with pytest.raises(AttributeError, match="num_reads"):
         backend.run(bell_circuit(), num_reads=100)
 
 
 def test_run_rejects_non_circuit_input():
-    backend = QCDLBackend(make_solver())
+    backend = QCDLSimulatorBackend(make_solver())
     with pytest.raises(TypeError):
         backend.run("not a circuit")
 
 
 def test_run_single_circuit(monkeypatch):
-    backend = QCDLBackend(make_solver())
+    backend = QCDLSimulatorBackend(make_solver())
     calls = patch_sample_qcdl(monkeypatch, backend.solver, [StubFuture()])
 
     job = backend.run(bell_circuit(), shots=100)
@@ -258,7 +267,7 @@ def test_run_single_circuit(monkeypatch):
 
 
 def test_run_passes_time_limit_and_label(monkeypatch):
-    backend = QCDLBackend(make_solver())
+    backend = QCDLSimulatorBackend(make_solver())
     calls = patch_sample_qcdl(monkeypatch, backend.solver, [StubFuture()])
 
     backend.run(bell_circuit(), time_limit=5, label="my-label")
@@ -268,7 +277,7 @@ def test_run_passes_time_limit_and_label(monkeypatch):
 
 
 def test_run_packs_circuits_by_default(monkeypatch):
-    backend = QCDLBackend(make_solver())
+    backend = QCDLSimulatorBackend(make_solver())
     calls = patch_sample_qcdl(monkeypatch, backend.solver, [StubFuture()])
 
     backend.run([bell_circuit("bell1"), bell_circuit("bell2")])
@@ -277,7 +286,7 @@ def test_run_packs_circuits_by_default(monkeypatch):
 
 
 def test_run_without_packing(monkeypatch):
-    backend = QCDLBackend(make_solver())
+    backend = QCDLSimulatorBackend(make_solver())
     calls = patch_sample_qcdl(monkeypatch, backend.solver, [StubFuture(), StubFuture()])
 
     backend.run([bell_circuit("bell1"), bell_circuit("bell2")], qcdl_pack_target=False)
@@ -345,7 +354,7 @@ def test_cancel_fans_out():
 
 
 def test_result_single_circuit(monkeypatch):
-    backend = QCDLBackend(make_solver())
+    backend = QCDLSimulatorBackend(make_solver())
     answer = make_answer(4, {"0": (0, ["0", "1", "0", "1"]),
                              "1": (1, ["0", "1", "0", "1"])}, num_qubits=2)
     patch_sample_qcdl(monkeypatch, backend.solver, [done_future(answer)])
@@ -361,7 +370,7 @@ def test_result_single_circuit(monkeypatch):
 
 
 def test_result_circuits_packed_in_one_qcdl(monkeypatch):
-    backend = QCDLBackend(make_solver())
+    backend = QCDLSimulatorBackend(make_solver())
     # tags are globally unique across the packed circuits: bell1 -> 0/1, bell2 -> 2/3
     answer = make_answer(4, {"0": (0, ["0", "1", "0", "1"]),
                              "1": (1, ["0", "1", "0", "1"]),
@@ -378,7 +387,7 @@ def test_result_circuits_packed_in_one_qcdl(monkeypatch):
 
 
 def test_result_multiple_qcdls(monkeypatch):
-    backend = QCDLBackend(make_solver())
+    backend = QCDLSimulatorBackend(make_solver())
     answer1 = make_answer(2, {"0": (0, ["0", "0"]), "1": (1, ["0", "0"])}, num_qubits=2)
     answer2 = make_answer(2, {"0": (0, ["1", "1"]), "1": (1, ["1", "1"])}, num_qubits=2)
     patch_sample_qcdl(
@@ -397,7 +406,7 @@ def test_result_multiple_qcdls(monkeypatch):
 
 
 def test_result_cached(monkeypatch):
-    backend = QCDLBackend(make_solver())
+    backend = QCDLSimulatorBackend(make_solver())
     answer = make_answer(2, {"0": (0, ["0", "0"]), "1": (1, ["0", "0"])}, num_qubits=2)
     patch_sample_qcdl(monkeypatch, backend.solver, [done_future(answer)])
 
@@ -406,7 +415,7 @@ def test_result_cached(monkeypatch):
 
 
 def test_result_raises_on_failed_problem(monkeypatch):
-    backend = QCDLBackend(make_solver())
+    backend = QCDLSimulatorBackend(make_solver())
     future = StubFuture(done=True, remote_status="FAILED",
                         exc=SolverFailureError("solver blew up"))
     patch_sample_qcdl(monkeypatch, backend.solver, [future])
@@ -418,7 +427,7 @@ def test_result_raises_on_failed_problem(monkeypatch):
 
 
 def test_result_timeout(monkeypatch):
-    backend = QCDLBackend(make_solver())
+    backend = QCDLSimulatorBackend(make_solver())
     patch_sample_qcdl(monkeypatch, backend.solver, [StubFuture(done=False)])
 
     job = backend.run(bell_circuit())

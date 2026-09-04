@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
     from dwave.plugins.qiskit.leap.provider import DWaveProvider
 
-__all__ = ["QCDLBackend"]
+__all__ = ["QCDLSimulatorBackend"]
 
 # gates the QCDL translators support that are also Qiskit standard gates
 # (the translator-only sy/sydg/mced have no Qiskit standard counterpart)
@@ -46,25 +46,29 @@ _QCDL_STANDARD_GATE_NAMES = (
 )
 
 
-class QCDLBackend(BackendV2):
-    """A Qiskit backend running circuits on a D-Wave Leap QCDL solver.
+class QCDLSimulatorBackend(BackendV2):
+    """A Qiskit backend running circuits on a D-Wave Leap QCDL simulator solver.
 
     Args:
-        solver: The Leap QCDL solver the backend submits problems to.
-        provider: The provider the backend was obtained from.
+        solver:
+            The Leap QCDL simulator solver the backend submits problems to.
+        provider:
+            The provider the backend was obtained from.
 
     Raises:
-        ValueError: If the solver is not a QCDL solver.
+        ValueError: If the solver is not a QCDL simulator solver.
     """
 
     def __init__(self, solver: QCDLSolver, provider: DWaveProvider | None = None):
+        if solver.properties.get("category") != "software-gate":
+            raise ValueError("selected solver is not a gate-model simulator")
         if 'qcdl' not in solver.supported_problem_types:
             raise ValueError("selected solver does not support the 'qcdl' problem type.")
 
         super().__init__(
             provider=provider,
             name=solver.name,
-            description=f"D-Wave Leap QCDL solver {solver.name}",
+            description=f"D-Wave Leap QCDL simulator solver {solver.name}",
             backend_version=solver.properties.get("version"),
         )
         self._solver = solver
@@ -76,7 +80,7 @@ class QCDLBackend(BackendV2):
 
     @property
     def solver(self) -> QCDLSolver:
-        """The Leap QCDL solver the backend submits problems to."""
+        """The Leap QCDL simulator solver the backend submits problems to."""
         return self._solver
 
     @property
