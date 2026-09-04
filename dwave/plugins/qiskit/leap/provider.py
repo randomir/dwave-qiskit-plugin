@@ -37,7 +37,8 @@ class DWaveProvider:
     Args:
         **config:
             :class:`~dwave.cloud.Client` configuration options passed to
-            :meth:`~dwave.cloud.client.Client.from_config`.
+            :meth:`~dwave.cloud.client.Client.from_config`, e.g. ``config_file``
+            or ``profile``.
 
     Examples:
         >>> from dwave.plugins.qiskit import DWaveProvider
@@ -46,16 +47,23 @@ class DWaveProvider:
     """
 
     def __init__(self, **config):
+        # default to the base client, but allow override
+        config.setdefault("client", "base")
+        # default to short-lived session to prevent resets on slow uploads
+        config.setdefault("connection_close", True)
+
         self._config = config
         self._client: Client | None = None
 
     def _get_client(self) -> Client:
         if self._client is None:
-            self._client = Client.from_config(client="base", **self._config)
+            self._client = Client.from_config(**self._config)
         return self._client
 
     def backends(self, name: str | None = None, **kwargs) -> list[QCDLBackend]:
         """List QCDL backends available on Leap.
+
+        Backends are listed newest solver first.
 
         Args:
             name: If given, only the backend (solver) with this name.
@@ -65,7 +73,10 @@ class DWaveProvider:
         Returns:
             The matching backends.
         """
-        filters = {"supported_problem_types__contains": "qcdl"}
+        filters = dict(
+            supported_problem_types__contains="qcdl",
+            order_by="-properties.version",
+        )
         if name is not None:
             filters["name"] = name
         solvers = self._get_client().get_solvers(**filters)
@@ -75,6 +86,9 @@ class DWaveProvider:
     def get_backend(self, name: str | None = None, **kwargs) -> QCDLBackend:
         """Return a single QCDL backend matching the specified filtering.
 
+        When more than one backend matches, the one with the newest solver
+        version is returned.
+
         Args:
             name: Name of the backend (solver).
             **kwargs: Backend attribute filters, as for :meth:`backends`.
@@ -83,15 +97,12 @@ class DWaveProvider:
             The matching backend.
 
         Raises:
-            QiskitBackendNotFoundError: If no backend, or more than one
-                backend, matches the filtering.
+            QiskitBackendNotFoundError: If no backend matches the filtering.
         """
         backends = self.backends(name, **kwargs)
-        if len(backends) == 1:
-            return backends[0]
         if not backends:
             raise QiskitBackendNotFoundError("no backend matches the criteria")
-        raise QiskitBackendNotFoundError("more than one backend matches the criteria")
+        return backends[0]
 
     def close(self) -> None:
         """Release the cloud client's resources.

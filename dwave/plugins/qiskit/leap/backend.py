@@ -52,9 +52,15 @@ class QCDLBackend(BackendV2):
     Args:
         solver: The Leap QCDL solver the backend submits problems to.
         provider: The provider the backend was obtained from.
+
+    Raises:
+        ValueError: If the solver is not a QCDL solver.
     """
 
     def __init__(self, solver: QCDLSolver, provider: DWaveProvider | None = None):
+        if 'qcdl' not in solver.supported_problem_types:
+            raise ValueError("selected solver does not support the 'qcdl' problem type.")
+
         super().__init__(
             provider=provider,
             name=solver.name,

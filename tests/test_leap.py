@@ -18,6 +18,7 @@ import unittest.mock as mock
 
 import pytest
 
+from dwave.cloud import Client
 from dwave.cloud.exceptions import (
     CanceledFutureError,
     ConfigFileError,
@@ -165,6 +166,21 @@ def test_get_backend_requires_single_match(num_solvers):
         client_cls.from_config.return_value = client
         with pytest.raises(QiskitBackendNotFoundError):
             DWaveProvider().get_backend()
+
+
+def test_get_backend_returns_first_of_many():
+    solvers = [
+        make_solver(name="qcdl_solver_old", version="0.1"),
+        make_solver(name="qcdl_solver_new", version="0.2"),
+    ]
+    client = Client(endpoint='mock', token='mock')
+    client._fetch_solvers = lambda **kwargs: solvers
+
+    with mock.patch("dwave.plugins.qiskit.leap.provider.Client") as client_cls:
+        client_cls.from_config.return_value = client
+        backend = DWaveProvider().get_backend()
+
+    assert backend.name == "qcdl_solver_new"
 
 
 def test_provider_context_manager_closes_client():
