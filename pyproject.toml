@@ -26,6 +26,7 @@ dependencies = [
     "qiskit-optimization>=0.7",
     "dwave-system>=1.20",
     "dwave-gate>=0.5.0",
+    "dwave-cloud-client>=0.14.7",
 ]
 
 [project.urls]
@@ -41,6 +42,7 @@ dev = [
     "qiskit-optimization==0.7.0",
     "dwave-system==1.35.0",
     "dwave-gate==0.5.0",
+    "dwave-cloud-client==0.14.7",
     {include-group = "changelog"},
 ]
 test = [

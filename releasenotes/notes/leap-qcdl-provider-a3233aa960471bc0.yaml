@@ -1,0 +1,10 @@
+---
+features:
+  - |
+    Add ``DWaveProvider``, a Qiskit provider that exposes D-Wave Leap
+    quantum gate model (QCDL) solvers as Qiskit backends.
+  - |
+    Add ``QCDLBackend`` and ``QCDLJob``, a ``BackendV2``/``JobV1``
+    implementation that translates circuits to QCDL, submits them to a Leap
+    QCDL solver, and assembles solver answers into a standard
+    ``qiskit.result.Result``.
