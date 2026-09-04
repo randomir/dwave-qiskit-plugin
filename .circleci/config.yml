@@ -41,10 +41,10 @@ jobs:
             - env
 
       - run: &run-tests
-          name: Run unittests
+          name: Run unit tests
           command: |
             . env/bin/activate
-            coverage run -m unittest discover
+            coverage run -m pytest
 
       - run: &run-codecov
           name: Run codecov
@@ -148,10 +148,10 @@ jobs:
             pip install --group dev --group test
 
       - run:
-          name: Run unittests
+          name: Run unit tests
           command: |
             env\Scripts\activate.ps1
-            coverage run -m unittest discover
+            coverage run -m pytest
 
   deploy:
     docker:

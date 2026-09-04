@@ -2,7 +2,11 @@
 D-Wave Ocean plugin for IBM Qiskit
 ==================================
 
-Enables `Qiskit <https://www.ibm.com/quantum/qiskit>`_ users to obtain ground state(s) of Ising Hamiltonians using `D-Wave <https://www.dwavesys.com/>`_'s QPU available via `Leap <https://cloud.dwavesys.com/>`_.
+Enables `Qiskit <https://www.ibm.com/quantum/qiskit>`_ users to work with `D-Wave <https://www.dwavesys.com/>`_'s
+quantum resources, available via `Leap <https://cloud.dwavesys.com/>`_.
+
+DWaveMinimumEigensolver
+=======================
 
 The package provides an implementation of Qiskit Optimization's
 `SamplingMinimumEigensolver <https://qiskit-community.github.io/qiskit-optimization/apidocs/qiskit_optimization.minimum_eigensolvers.html>`_
@@ -11,7 +15,7 @@ interface (available as ``DWaveMinimumEigensolver``) which can be used directly 
 
 
 Examples
-========
+--------
 
 Solve a `QuadraticProgram <https://qiskit-community.github.io/qiskit-optimization/stubs/qiskit_optimization.QuadraticProgram.html>`_
 with `MinimumEigenOptimizer <https://qiskit-community.github.io/qiskit-optimization/stubs/qiskit_optimization.algorithms.MinimumEigenOptimizer.html>`_
@@ -85,6 +89,40 @@ produces:
     # snipped for brevity
     MemoryError: Unable to allocate 1.00 TiB for an array with shape (68719476736,) and data type complex128
 
+QCDL Translators
+================
+
+``dwave.plugins.qiskit.qcdl.translators`` converts Qiskit ``QuantumCircuit``
+objects into D-Wave's QCDL program format, for running gate-model circuits on
+D-Wave's gate-model hardware/simulator via ``dwave-gate``.
+
+Examples
+--------
+
+Translate a Bell state Qiskit circuit into a QCDL program:
+
+.. code-block:: python
+
+    >>> from qiskit import QuantumCircuit
+    >>> from dwave.gate.qcdl import print_qcdl
+    >>> from dwave.plugins.qiskit.qcdl.translators import circuit_to_qcdl
+    ...
+    >>> qc = QuantumCircuit(2, 2, name="bell")
+    >>> qc.h(0)
+    >>> qc.cx(0, 1)
+    >>> qc.measure([0, 1], [0, 1])
+    ...
+    >>> result = circuit_to_qcdl(qc)
+    ...
+    >>> print_qcdl(result.qcdl)
+    begin quantum
+       q0.initialize(q1)
+       h([q0], q0)
+       cx([q0, q1], q0, q1)
+       measure([q0], q0, log=True, tag="0")
+       measure([q1], q1, log=True, tag="1")
+    end quantum
+
 Installation
 ============
 
@@ -109,7 +147,7 @@ Test dependencies are defined in the ``test`` dependency group in
 .. code-block:: bash
 
     pip install --group test .
-    python -m unittest
+    python -m pytest
 
 License
 =======
