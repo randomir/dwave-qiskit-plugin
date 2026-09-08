@@ -39,7 +39,23 @@ from dwave.plugins.qiskit.leap.job import _future_status
 
 
 def make_solver(**kwargs) -> QCDLSolver:
+    # TODO: update the `qcdl_solver_data` mock solver data generator
     kwargs.setdefault("category", "software-gate")
+    kwargs.setdefault("default_noise_model", False)
+    kwargs.setdefault("default_qpu", "DRsim_21qubits")
+    kwargs.setdefault("default_repeat_until_shots_requested", False)
+    kwargs.setdefault("default_shots", 1000)
+    kwargs.setdefault("default_time_limit_s", 2700)
+    kwargs.setdefault("default_transpile", True)
+    kwargs.setdefault("maximum_num_qubits", 21)
+    kwargs.setdefault("maximum_shots", 1000000)
+    kwargs.setdefault("maximum_time_limit_s", 2700)
+    kwargs.setdefault("minimum_shots", 1)
+    kwargs.setdefault("minimum_time_limit_s", 1)
+    kwargs.setdefault("supported_qpu_strings", ["DRsim_17qubits", "DRsim_21qubits"])
+    kwargs.setdefault("parameters", dict(noise_model='', qpu='', repeat_until_shots_requested='',
+                                         shots='', time_limit='', transpile=''))
+
     return QCDLSolver(client=mock.Mock(), data=qcdl_solver_data(**kwargs))
 
 
@@ -215,29 +231,39 @@ def test_target_gates_and_connectivity():
     target = backend.target
 
     assert set(target.operation_names) == set(_QCDL_STANDARD_GATE_NAMES) | {"measure"}
-    assert target.num_qubits is None
+    assert target.num_qubits == 21
     # properties=None instructions are global, i.e. all-to-all
     assert target.qargs is None
 
 
 def test_target_num_qubits_from_solver():
-    backend = QCDLSimulatorBackend(make_solver(num_qubits=8))
+    backend = QCDLSimulatorBackend(make_solver(maximum_num_qubits=8))
     assert backend.target.num_qubits == 8
 
 
+def _get_default_solver_options():
+    return {
+        "shots": 1000, "time_limit": 2700,
+        "noise_model": False, "qpu": "DRsim_21qubits",
+        "transpile": True, "repeat_until_shots_requested": False,
+    }
+
+def _get_default_options():
+    return _get_default_solver_options() | {
+        "label": None, "qcdl_pack_target": True,
+    }
+
 def test_default_options():
     backend = QCDLSimulatorBackend(make_solver())
-    assert dict(backend.options) == {
-        "shots": 1024, "time_limit": None, "label": None, "qcdl_pack_target": True,
-    }
+    assert dict(backend.options) == _get_default_options()
 
 
 def test_shots_validated_against_max_shots(monkeypatch):
-    backend = QCDLSimulatorBackend(make_solver())  # mock solver has max_shots=10000
+    backend = QCDLSimulatorBackend(make_solver())  # mock solver has max_shots=1M
     patch_sample_qcdl(monkeypatch, backend.solver, [StubFuture()])
 
     with pytest.raises(ValueError, match="shots"):
-        backend.run(bell_circuit(), shots=20000)
+        backend.run(bell_circuit(), shots=2000000)
 
 
 def test_unknown_run_option_rejected():
@@ -261,7 +287,7 @@ def test_run_single_circuit(monkeypatch):
     assert isinstance(job, QCDLJob)
     assert job.backend() is backend
     assert len(calls) == 1
-    assert calls[0]["params"] == {"shots": 100}
+    assert calls[0]["params"] == _get_default_solver_options() | {"shots": 100}
     assert calls[0]["label"].startswith(f"qiskit:{job.job_id()}:")
     assert isinstance(calls[0]["qcdl"], dict)  # the submittable QCDL program
 
@@ -272,7 +298,7 @@ def test_run_passes_time_limit_and_label(monkeypatch):
 
     backend.run(bell_circuit(), time_limit=5, label="my-label")
 
-    assert calls[0]["params"] == {"shots": 1024, "time_limit": 5}
+    assert calls[0]["params"] == _get_default_solver_options() | {"time_limit": 5}
     assert calls[0]["label"] == "my-label"
 
 

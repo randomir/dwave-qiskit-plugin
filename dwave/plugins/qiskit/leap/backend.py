@@ -18,7 +18,8 @@ from __future__ import annotations
 
 import copy
 import uuid
-from typing import TYPE_CHECKING
+from functools import cached_property
+from typing import Any, TYPE_CHECKING
 
 from qiskit import QuantumCircuit
 from qiskit.circuit import Measure
@@ -74,9 +75,24 @@ class QCDLSimulatorBackend(BackendV2):
         self._solver = solver
         self._target: Target | None = None
 
-        max_shots = solver.properties.get("max_shots")
-        if max_shots:
-            self.options.set_validator("shots", (1, int(max_shots)))
+        # update options with actual solver defaults
+        self._options.update_options(**self._solver_defaults)
+
+        # configure solver parameter validators
+        self.options.set_validator("noise_model", bool)
+        self.options.set_validator("repeat_until_shots_requested", bool)
+        self.options.set_validator("transpile", bool)
+
+        if supported_qpu_strings := solver.properties.get("supported_qpu_strings"):
+            self.options.set_validator("qpu", list(supported_qpu_strings))
+
+        min_shots = solver.properties.get("minimum_shots", 1)
+        max_shots = solver.properties.get("maximum_shots", 1_000_000)
+        self.options.set_validator("shots", (int(min_shots), int(max_shots)))
+
+        min_time_limit = solver.properties.get("minimum_time_limit_s", 1)
+        max_time_limit = solver.properties.get("maximum_time_limit_s", 2700)
+        self.options.set_validator("time_limit", (int(min_time_limit), int(max_time_limit)))
 
     @property
     def solver(self) -> QCDLSolver:
@@ -93,16 +109,35 @@ class QCDLSimulatorBackend(BackendV2):
     def max_circuits(self) -> None:
         return None
 
+    @cached_property
+    def _solver_defaults(self) -> dict[str, Any]:
+        """Default values of solver parameters."""
+        properties = self.solver.properties.copy()
+        defaults = {}
+        for param in self.solver.parameters:
+            default = properties.get(f"default_{param}", properties.get(f"default_{param}_s"))
+            if default is not None:
+                defaults[param] = default
+        return defaults
+
     @classmethod
     def _default_options(cls) -> Options:
         return Options(
-            shots=1024, time_limit=None, label=None, qcdl_pack_target=True)
+            noise_model=False,
+            qpu=None,
+            repeat_until_shots_requested=False,
+            shots=1,
+            time_limit=1,
+            transpile=True,
+            label=None,
+            qcdl_pack_target=True,
+        )
 
     def _build_target(self) -> Target:
         target = Target(
             description=f"Target for {self.name}",
             # None means unconstrained (no qubit limit advertised by the solver)
-            num_qubits=self._solver.properties.get("num_qubits"),
+            num_qubits=self._solver.properties.get("maximum_num_qubits"),
         )
         gate_mapping = get_standard_gate_name_mapping()
         for gate_name in _QCDL_STANDARD_GATE_NAMES:
@@ -119,11 +154,15 @@ class QCDLSimulatorBackend(BackendV2):
         Args:
             run_input: A circuit, or list of circuits, to run.
             **options: Overrides of the backend's :attr:`options` for this run
-                (``shots``, ``time_limit``, ``label``, ``qcdl_pack_target``).
+                (``shots``, ``time_limit``, ``repeat_until_shots_requested``,
+                ``transpile``, ``qpu``, ``noise_model``, ``label``,
+                ``qcdl_pack_target``).
 
         Returns:
             The job wrapping the submitted QCDL problems.
         """
+        # TODO: link to param docs once published.
+
         if isinstance(run_input, QuantumCircuit):
             circuits = [run_input]
         elif isinstance(run_input, (list, tuple)) and all(
@@ -146,9 +185,7 @@ class QCDLSimulatorBackend(BackendV2):
 
         job_id = uuid.uuid4().hex
 
-        params = {"shots": opts.shots}
-        if opts.time_limit is not None:
-            params["time_limit"] = opts.time_limit
+        params = {name: opts[name] for name in self.solver.parameters}
 
         qcdls = list(
             circuits_to_qcdls(
