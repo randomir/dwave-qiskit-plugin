@@ -15,5 +15,6 @@
 from dwave.plugins.qiskit.leap.backend import QCDLSimulatorBackend
 from dwave.plugins.qiskit.leap.job import QCDLJob
 from dwave.plugins.qiskit.leap.provider import DWaveProvider
+from dwave.plugins.qiskit.leap.result import QCDLResult
 
-__all__ = ["DWaveProvider", "QCDLJob", "QCDLSimulatorBackend"]
+__all__ = ["DWaveProvider", "QCDLJob", "QCDLResult", "QCDLSimulatorBackend"]

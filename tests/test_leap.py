@@ -27,13 +27,14 @@ from dwave.cloud.exceptions import (
 )
 from dwave.cloud.solver import QCDLSolver
 from dwave.cloud.testing.mocks import qcdl_solver_data
+from dwave.gate.results import YieldHandling
 
 from qiskit import QuantumCircuit
 from qiskit.providers import JobError, JobStatus, JobTimeoutError
 from qiskit.providers.exceptions import QiskitBackendNotFoundError
 
 from dwave.plugins.qiskit import DWaveProvider
-from dwave.plugins.qiskit.leap import QCDLJob, QCDLSimulatorBackend
+from dwave.plugins.qiskit.leap import QCDLJob, QCDLResult, QCDLSimulatorBackend
 from dwave.plugins.qiskit.leap.backend import _QCDL_STANDARD_GATE_NAMES
 from dwave.plugins.qiskit.leap.job import _future_status
 
@@ -251,6 +252,7 @@ def _get_default_solver_options():
 def _get_default_options():
     return _get_default_solver_options() | {
         "label": None, "pack_qcdls": True, "qcdl_pack_target": 0.4,
+        "yield_handling": YieldHandling.only_post_selected_counts,
     }
 
 def test_default_options():
@@ -459,6 +461,56 @@ def test_result_timeout(monkeypatch):
     job = backend.run(bell_circuit())
     with pytest.raises(JobTimeoutError):
         job.result(timeout=0.01)
+
+
+def make_splat_answer() -> dict:
+    """An answer where noise_model=True marked one measurement with a splat."""
+    return make_answer(4, {"0": (0, ["0", "1", "*", "1"]),
+                           "1": (1, ["0", "1", "0", "1"])}, num_qubits=2)
+
+
+def test_result_post_selects_splats_by_default(monkeypatch):
+    backend = QCDLSimulatorBackend(make_solver())
+    patch_sample_qcdl(monkeypatch, backend.solver, [done_future(make_splat_answer())])
+
+    result = backend.run(bell_circuit(), noise_model=True).result()
+
+    assert isinstance(result, QCDLResult)
+    assert result.get_counts() == {"00": 1, "11": 2}
+    # the unresolved counts and the yield stay available in the experiment data
+    assert result.data(0)["raw_counts"] == {"00": 1, "11": 2, "0*": 1}
+    assert result.data(0)["post_selection_yield"] == 0.75
+
+
+def test_result_keeps_splats_when_ignored(monkeypatch):
+    backend = QCDLSimulatorBackend(make_solver())
+    patch_sample_qcdl(monkeypatch, backend.solver, [done_future(make_splat_answer())])
+
+    job = backend.run(bell_circuit(), noise_model=True,
+                      yield_handling=YieldHandling.ignore_splats)
+    counts = job.result().get_counts()
+
+    assert counts == {"00": 1, "11": 2, "0*": 1}
+
+
+def test_get_counts_yield_handling_override(monkeypatch):
+    backend = QCDLSimulatorBackend(make_solver())
+    patch_sample_qcdl(monkeypatch, backend.solver, [done_future(make_splat_answer())])
+
+    # yield_handling is also accepted by name
+    result = backend.run(bell_circuit(), noise_model=True,
+                         yield_handling="ignore_splats").result()
+
+    assert result.get_counts() == {"00": 1, "11": 2, "0*": 1}
+    renormalized = result.get_counts(
+        yield_handling=YieldHandling.renormalize_distribution)
+    assert renormalized == {"00": pytest.approx(4 / 3), "11": pytest.approx(8 / 3)}
+
+
+def test_run_rejects_invalid_yield_handling():
+    backend = QCDLSimulatorBackend(make_solver())
+    with pytest.raises(ValueError, match="yield_handling"):
+        backend.run(bell_circuit(), yield_handling="not_a_strategy")
 
 
 # live tests (skipped unless Leap access is configured)

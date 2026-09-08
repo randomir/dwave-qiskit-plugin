@@ -22,12 +22,12 @@ from typing import TYPE_CHECKING
 
 from dwave.cloud.api.constants import ProblemStatus
 from dwave.cloud.exceptions import CanceledFutureError
-from dwave.gate.results import Result as GateResult
+from dwave.gate.results import Result as GateResult, YieldHandling
 
 from qiskit.providers import JobError, JobStatus, JobTimeoutError, JobV1
-from qiskit.result import Result
 from qiskit.result.models import ExperimentResult, ExperimentResultData
 
+from dwave.plugins.qiskit.leap.result import QCDLResult
 from dwave.plugins.qiskit.qcdl.translators import QCDLWithMetadata, make_qiskit_counts
 
 if TYPE_CHECKING:
@@ -84,6 +84,7 @@ class QCDLJob(JobV1):
         job_id: A unique identifier for the job.
         futures: The in-flight cloud-client problems, one per QCDL program.
         qcdls: The translated QCDL programs, positionally matching ``futures``.
+        yield_handling: Strategy used to resolve splats in the result counts.
     """
 
     _async = True
@@ -94,11 +95,13 @@ class QCDLJob(JobV1):
         job_id: str,
         futures: list[Future],
         qcdls: list[QCDLWithMetadata],
+        yield_handling: YieldHandling = YieldHandling.only_post_selected_counts,
     ):
         super().__init__(backend, job_id)
         self._futures = futures
         self._qcdls = qcdls
-        self._result: Result | None = None
+        self._yield_handling = YieldHandling.from_name(yield_handling)
+        self._result: QCDLResult | None = None
 
     def submit(self) -> None:
         """Unsupported; problems are submitted when the job is created by ``run()``."""
@@ -125,15 +128,17 @@ class QCDLJob(JobV1):
         for future in self._futures:
             future.cancel()
 
-    def result(self, timeout: float | None = None) -> Result:
+    def result(self, timeout: float | None = None) -> QCDLResult:
         """Wait for all the job's QCDL problems and assemble their results.
 
         Args:
             timeout: Total number of seconds to wait for the results.
 
         Returns:
-            A :class:`~qiskit.result.Result` with one experiment per submitted
-            circuit, in submission order.
+            A :class:`.QCDLResult` with one experiment per submitted circuit,
+            in submission order. Each experiment's counts have splats resolved
+            per the job's ``yield_handling``; the unresolved counts are kept in
+            the experiment data as ``raw_counts``.
 
         Raises:
             JobTimeoutError: If the results don't arrive within ``timeout``.
@@ -143,7 +148,7 @@ class QCDLJob(JobV1):
             self._result = self._build_result(timeout=timeout)
         return self._result
 
-    def _build_result(self, timeout: float | None) -> Result:
+    def _build_result(self, timeout: float | None) -> QCDLResult:
         deadline = None if timeout is None else time.monotonic() + timeout
         experiments = []
 
@@ -163,18 +168,22 @@ class QCDLJob(JobV1):
             gate_result = GateResult.model_validate_json(answer.read())
 
             for metadata in _per_circuit_metadata(qcdl):
+                raw_counts = make_qiskit_counts(gate_result, metadata)
+                counts, post_selection_yield = self._yield_handling.apply(raw_counts)
                 experiments.append(
                     ExperimentResult(
                         shots=gate_result.num_shots,
                         success=True,
                         data=ExperimentResultData(
-                            counts=make_qiskit_counts(gate_result, metadata)
+                            counts=counts,
+                            raw_counts=raw_counts,
+                            post_selection_yield=post_selection_yield,
                         ),
                         header=metadata.qiskit_header,
                     )
                 )
 
-        return Result(
+        return QCDLResult(
             backend_name=self.backend().name,
             backend_version=self.backend().backend_version,
             job_id=self.job_id(),

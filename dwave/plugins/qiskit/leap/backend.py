@@ -21,6 +21,8 @@ import uuid
 from functools import cached_property
 from typing import Any, TYPE_CHECKING
 
+from dwave.gate.results import YieldHandling
+
 from qiskit import QuantumCircuit
 from qiskit.circuit import Measure
 from qiskit.circuit.library.standard_gates import get_standard_gate_name_mapping
@@ -83,6 +85,9 @@ class QCDLSimulatorBackend(BackendV2):
         self.options.set_validator("repeat_until_shots_requested", bool)
         self.options.set_validator("transpile", bool)
 
+        # a list validator accepts both YieldHandling members and their names
+        self.options.set_validator("yield_handling", list(YieldHandling))
+
         if supported_qpu_strings := solver.properties.get("supported_qpu_strings"):
             self.options.set_validator("qpu", list(supported_qpu_strings))
 
@@ -132,6 +137,7 @@ class QCDLSimulatorBackend(BackendV2):
             label=None,
             pack_qcdls=True,
             qcdl_pack_target=0.4,
+            yield_handling=YieldHandling.only_post_selected_counts,
         )
 
     def _build_target(self) -> Target:
@@ -157,7 +163,10 @@ class QCDLSimulatorBackend(BackendV2):
             **options: Overrides of the backend's :attr:`options` for this run
                 (``shots``, ``time_limit``, ``repeat_until_shots_requested``,
                 ``transpile``, ``qpu``, ``noise_model``, ``label``,
-                ``pack_qcdls``, ``qcdl_pack_target``).
+                ``pack_qcdls``, ``qcdl_pack_target``, ``yield_handling``).
+                ``yield_handling``, a :class:`~dwave.gate.results.YieldHandling`
+                member or its name, selects how splats reported when running
+                with ``noise_model=True`` are resolved in the result counts.
 
         Returns:
             The job wrapping the submitted QCDL problems.
@@ -203,4 +212,10 @@ class QCDLSimulatorBackend(BackendV2):
             for qcdl in qcdls
         ]
 
-        return QCDLJob(backend=self, job_id=job_id, futures=futures, qcdls=qcdls)
+        return QCDLJob(
+            backend=self,
+            job_id=job_id,
+            futures=futures,
+            qcdls=qcdls,
+            yield_handling=YieldHandling.from_name(opts.yield_handling),
+        )

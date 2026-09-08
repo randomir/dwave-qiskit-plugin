@@ -4,7 +4,14 @@ features:
     Add ``DWaveProvider``, a Qiskit provider that exposes D-Wave Leap
     quantum gate model (QCDL) solvers as Qiskit backends.
   - |
-    Add ``QCDLBackend`` and ``QCDLJob``, a ``BackendV2``/``JobV1``
+    Add ``QCDLSimulatorBackend`` and ``QCDLJob``, a ``BackendV2``/``JobV1``
     implementation that translates circuits to QCDL, submits them to a Leap
-    QCDL solver, and assembles solver answers into a standard
-    ``qiskit.result.Result``.
+    QCDL solver, and assembles solver answers into a ``QCDLResult``, a
+    ``qiskit.result.Result`` subclass.
+  - |
+    Add a ``yield_handling`` backend option that selects the
+    ``dwave.gate.results.YieldHandling`` strategy used to resolve splats
+    (measurements marked as errored when running with ``noise_model=True``)
+    in the result counts, defaulting to post-selection. ``QCDLResult`` keeps
+    the unresolved counts in each experiment's data as ``raw_counts`` and
+    lets ``get_counts()`` re-resolve them with a different strategy.
