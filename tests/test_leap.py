@@ -250,7 +250,7 @@ def _get_default_solver_options():
 
 def _get_default_options():
     return _get_default_solver_options() | {
-        "label": None, "qcdl_pack_target": True,
+        "label": None, "pack_qcdls": True, "qcdl_pack_target": 0.4,
     }
 
 def test_default_options():
@@ -315,7 +315,7 @@ def test_run_without_packing(monkeypatch):
     backend = QCDLSimulatorBackend(make_solver())
     calls = patch_sample_qcdl(monkeypatch, backend.solver, [StubFuture(), StubFuture()])
 
-    backend.run([bell_circuit("bell1"), bell_circuit("bell2")], qcdl_pack_target=False)
+    backend.run([bell_circuit("bell1"), bell_circuit("bell2")], pack_qcdls=False)
 
     assert len(calls) == 2  # one QCDL per circuit
 
@@ -421,7 +421,7 @@ def test_result_multiple_qcdls(monkeypatch):
     )
 
     job = backend.run(
-        [bell_circuit("bell1"), bell_circuit("bell2")], qcdl_pack_target=False
+        [bell_circuit("bell1"), bell_circuit("bell2")], pack_qcdls=False
     )
     result = job.result()
 

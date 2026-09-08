@@ -130,7 +130,8 @@ class QCDLSimulatorBackend(BackendV2):
             time_limit=1,
             transpile=True,
             label=None,
-            qcdl_pack_target=True,
+            pack_qcdls=True,
+            qcdl_pack_target=0.4,
         )
 
     def _build_target(self) -> Target:
@@ -156,7 +157,7 @@ class QCDLSimulatorBackend(BackendV2):
             **options: Overrides of the backend's :attr:`options` for this run
                 (``shots``, ``time_limit``, ``repeat_until_shots_requested``,
                 ``transpile``, ``qpu``, ``noise_model``, ``label``,
-                ``qcdl_pack_target``).
+                ``pack_qcdls``, ``qcdl_pack_target``).
 
         Returns:
             The job wrapping the submitted QCDL problems.
@@ -189,7 +190,8 @@ class QCDLSimulatorBackend(BackendV2):
 
         qcdls = list(
             circuits_to_qcdls(
-                circuits, job_id=job_id, qcdl_pack_target=opts.qcdl_pack_target
+                circuits, job_id=job_id, pack_qcdls=opts.pack_qcdls,
+                qcdl_pack_target=opts.qcdl_pack_target
             )
         )
         futures = [
