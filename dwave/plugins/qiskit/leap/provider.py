@@ -66,8 +66,10 @@ class DWaveProvider:
         Backends are listed newest solver first.
 
         Args:
-            name: If given, only the backend (solver) with this name.
-            **kwargs: Backend attribute filters, matched against backends'
+            name:
+                If given, only the backend (solver) with this name is returned.
+            **kwargs:
+                Backend attribute filters, matched against backends'
                 configuration and status.
 
         Returns:
@@ -103,7 +105,9 @@ class DWaveProvider:
         """
         backends = self.backends(name, **kwargs)
         if not backends:
-            raise QiskitBackendNotFoundError("no backend matches the criteria")
+            raise QiskitBackendNotFoundError(
+                "no backend matches the provider configuration and/or backend filters"
+            )
         return backends[0]
 
     def close(self) -> None:

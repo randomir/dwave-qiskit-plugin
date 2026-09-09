@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from dwave.gate.results import YieldHandling
 
+from qiskit.circuit.quantumcircuit import QuantumCircuit
 from qiskit.exceptions import QiskitError
 from qiskit.result import Counts, Result
 
@@ -31,19 +32,21 @@ class QCDLResult(Result):
     error was detected is reported as a ``"*"`` (splat) instead of a bit value.
     Qiskit cannot represent splats in counts, so they are resolved with a
     :class:`~dwave.gate.results.YieldHandling` strategy: the counts stored in
-    each experiment's ``data`` were resolved with the strategy the job ran
+    each experiment's ``data`` are resolved with the strategy the job ran
     with, while the unresolved counts are kept in ``data`` as ``raw_counts``
     (with the observed yield as ``post_selection_yield``).
     """
 
     def get_counts(
-        self, experiment=None, yield_handling: YieldHandling | str | None = None
+        self,
+        experiment: str | QuantumCircuit | int | None = None,
+        yield_handling: YieldHandling | str | None = None,
     ) -> Counts | list[Counts]:
         """Get the histogram data of an experiment, with splats resolved.
 
         Args:
-            experiment: The experiment, as in
-                :meth:`qiskit.result.Result.get_counts`.
+            experiment: the index of the experiment, as specified by
+                ``data([experiment])``. See: :meth:`qiskit.result.Result.get_counts`.
             yield_handling: Strategy (or its name) used to re-resolve splats
                 in the raw counts. Defaults to the counts already resolved
                 with the strategy the job ran with.

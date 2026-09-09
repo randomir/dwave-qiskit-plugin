@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import copy
 import uuid
+from collections.abc import Iterable
 from functools import cached_property
 from typing import Any, TYPE_CHECKING
 
@@ -154,13 +155,15 @@ class QCDLSimulatorBackend(BackendV2):
         return target
 
     def run(
-        self, run_input: QuantumCircuit | list[QuantumCircuit], **options
+        self, run_input: QuantumCircuit | Iterable[QuantumCircuit], **options
     ) -> QCDLJob:
         """Translate circuits to QCDL and submit them to the solver.
 
         Args:
-            run_input: A circuit, or list of circuits, to run.
-            **options: Overrides of the backend's :attr:`options` for this run
+            run_input:
+                A circuit, or an iterable of circuits, to run.
+            **options:
+                Overrides of the backend's :attr:`options` for this run
                 (``shots``, ``time_limit``, ``repeat_until_shots_requested``,
                 ``transpile``, ``qpu``, ``noise_model``, ``label``,
                 ``pack_qcdls``, ``qcdl_pack_target``, ``yield_handling``).
@@ -175,13 +178,13 @@ class QCDLSimulatorBackend(BackendV2):
 
         if isinstance(run_input, QuantumCircuit):
             circuits = [run_input]
-        elif isinstance(run_input, (list, tuple)) and all(
+        elif isinstance(run_input, Iterable) and all(
             isinstance(circuit, QuantumCircuit) for circuit in run_input
         ):
             circuits = list(run_input)
         else:
             raise TypeError(
-                "run() accepts a QuantumCircuit or a list of QuantumCircuit, "
+                "run() accepts a QuantumCircuit or an iterable of QuantumCircuit items, "
                 f"not {type(run_input).__name__}"
             )
 
