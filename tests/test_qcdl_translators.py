@@ -19,7 +19,8 @@ import re
 
 import numpy as np
 import pytest
-from dwave.gate.qcdl import print_qcdl, qcdl
+from dwave.gate.qcdl import qcdl
+from dwave.gate.utils import print_qcdl
 from dwave.gate.results import Result
 from qiskit.circuit import (
     ClassicalRegister,
