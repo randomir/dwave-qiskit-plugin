@@ -1,0 +1,4 @@
+---
+upgrade:
+  - |
+    Drop support for ``dwave-gate<0.5``.

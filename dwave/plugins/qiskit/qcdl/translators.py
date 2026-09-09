@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Iterator
 import numpy as np
 
 from dwave.gate.qcdl import QCDLModule, operations, procedure, qcdl
-from dwave.gate.qcdl.qcdl_circuit import QCDLCircuit
+from dwave.gate.qcdl.circuit import QCDLCircuit
 from dwave.gate.results import Result, format_memory
 
 from qiskit import QuantumCircuit, qasm2
