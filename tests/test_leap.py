@@ -179,6 +179,32 @@ def test_provider_backends_name_filter():
     assert client.get_solvers.call_args.kwargs["name"] == "some_solver"
 
 
+def test_provider_backends_property_filtering_works():
+    solvers = [
+        make_solver(name="dr17", maximum_num_qubits=17),
+        make_solver(name="dr21", maximum_num_qubits=21),
+    ]
+    client = Client(endpoint='mock', token='mock')
+    client._fetch_solvers = lambda **kwargs: solvers
+
+    with mock.patch("dwave.plugins.qiskit.leap.provider.Client") as client_cls:
+        client_cls.from_config.return_value = client
+
+        # name filter
+        backends = DWaveProvider().backends(name="dr17")
+        assert len(backends) == 1
+        assert backends[0].num_qubits == 17
+
+        # custom property filter
+        backends = DWaveProvider().backends(maximum_num_qubits=21)
+        assert len(backends) == 1
+        assert backends[0].name == "dr21"
+
+        # solver/backend not found
+        backends = DWaveProvider().backends(name="non-existing")
+        assert len(backends) == 0
+
+
 def test_get_backend_raises_when_none_match():
     client = mock.Mock()
     client.get_solvers.return_value = []

@@ -63,29 +63,30 @@ class DWaveProvider:
     def backends(self, name: str | None = None, **kwargs) -> list[QCDLSimulatorBackend]:
         """List all QCDL simulator backends available on Leap.
 
-        Backends are listed newest solver first.
+        Backends are by default listed newest solver first, but the order can be
+        overridden with the ``order_by`` keyword argument.
 
         Args:
             name:
                 If given, only the backend (solver) with this name is returned.
             **kwargs:
-                Backend attribute filters, matched against backends'
-                configuration and status.
+                Backend attribute filters, matched against solver properties.
+                See :meth:`~dwave.cloud.client.Client.get_solvers`.
 
         Returns:
             The matching backends.
         """
-        filters = dict(
+        filters = kwargs | dict(
             supported_problem_types__contains="qcdl",
             category="software-gate",
-            order_by="-properties.version",
         )
+        filters.setdefault("order_by", "-properties.version")
         if name is not None:
             filters["name"] = name
+
         solvers = self._get_client().get_solvers(**filters)
 
-        backends = [QCDLSimulatorBackend(solver, provider=self) for solver in solvers]
-        return filter_backends(backends, **kwargs)
+        return [QCDLSimulatorBackend(solver, provider=self) for solver in solvers]
 
     def get_backend(self, name: str | None = None, **kwargs) -> QCDLSimulatorBackend:
         """Return a single QCDL simulator backend matching the specified filtering.
@@ -94,8 +95,10 @@ class DWaveProvider:
         version is returned.
 
         Args:
-            name: Name of the backend (solver).
-            **kwargs: Backend attribute filters, as for :meth:`backends`.
+            name:
+                Name of the backend (solver).
+            **kwargs:
+                Backend attribute filters, as for :meth:`backends`.
 
         Returns:
             The matching backend.
