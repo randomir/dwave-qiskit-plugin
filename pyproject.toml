@@ -22,7 +22,7 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
-    "qiskit>=1.0",
+    "qiskit>=2",
     "qiskit-optimization>=0.7",
     "dwave-system>=1.20",
     "dwave-gate>=0.5.0",
