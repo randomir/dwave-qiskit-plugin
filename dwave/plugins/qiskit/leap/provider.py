@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 from dwave.cloud import Client
+from dwave.cloud.exceptions import SolverNotFoundError
 
 from qiskit.providers.exceptions import QiskitBackendNotFoundError
 from qiskit.providers.providerutils import filter_backends
@@ -84,7 +85,11 @@ class DWaveProvider:
         if name is not None:
             filters["name"] = name
 
-        solvers = self._get_client().get_solvers(**filters)
+        try:
+            solvers = self._get_client().get_solvers(**filters)
+        except SolverNotFoundError:
+            # note: get_solvers raises SolverNotFoundError only when named solver not found
+            solvers = []
 
         return [QCDLSimulatorBackend(solver, provider=self) for solver in solvers]
 

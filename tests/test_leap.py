@@ -24,6 +24,7 @@ from dwave.cloud.exceptions import (
     ConfigFileError,
     SolverError,
     SolverFailureError,
+    SolverNotFoundError,
 )
 from dwave.cloud.solver import QCDLSolver
 from dwave.cloud.testing.mocks import qcdl_solver_data
@@ -185,7 +186,12 @@ def test_provider_backends_property_filtering_works():
         make_solver(name="dr21", maximum_num_qubits=21),
     ]
     client = Client(endpoint='mock', token='mock')
-    client._fetch_solvers = lambda **kwargs: solvers
+
+    def _fetch_solvers(**kwargs):
+        if kwargs.pop('name', None) not in ['dr17', 'dr21', None]:
+            raise SolverNotFoundError
+        return solvers
+    client._fetch_solvers = _fetch_solvers
 
     with mock.patch("dwave.plugins.qiskit.leap.provider.Client") as client_cls:
         client_cls.from_config.return_value = client
@@ -200,9 +206,18 @@ def test_provider_backends_property_filtering_works():
         assert len(backends) == 1
         assert backends[0].name == "dr21"
 
+        backend = DWaveProvider().get_backend(maximum_num_qubits=21)
+        assert backend.name == "dr21"
+
         # solver/backend not found
         backends = DWaveProvider().backends(name="non-existing")
         assert len(backends) == 0
+
+        with pytest.raises(QiskitBackendNotFoundError):
+            DWaveProvider().get_backend(name="non-existing")
+
+        with pytest.raises(QiskitBackendNotFoundError):
+            DWaveProvider().get_backend(maximum_num_qubits=100)
 
 
 def test_get_backend_raises_when_none_match():
