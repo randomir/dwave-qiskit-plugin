@@ -28,6 +28,7 @@ from qiskit import QuantumCircuit
 from qiskit.circuit import Measure
 from qiskit.circuit.library.standard_gates import get_standard_gate_name_mapping
 from qiskit.providers import BackendV2, Options
+from qiskit.result import MeasLevel
 from qiskit.transpiler import Target
 
 from dwave.plugins.qiskit.leap.job import QCDLJob
@@ -35,7 +36,6 @@ from dwave.plugins.qiskit.qcdl.translators import circuits_to_qcdls
 
 if TYPE_CHECKING:
     from dwave.cloud.solver import QCDLSolver
-
     from dwave.plugins.qiskit.leap.provider import DWaveProvider
 
 __all__ = ["QCDLSimulatorBackend"]
@@ -187,6 +187,15 @@ class QCDLSimulatorBackend(BackendV2):
                 "run() accepts a QuantumCircuit or an iterable of QuantumCircuit items, "
                 f"not {type(run_input).__name__}"
             )
+
+        # we only support MeasLevel.CLASSIFIED, so don't fail if explicitly specified
+        meas_level = options.pop('meas_level', None)
+        if meas_level is not None and meas_level != MeasLevel.CLASSIFIED:
+            raise RuntimeError(f"{meas_level=} is not supported by this backend")
+
+        # clarify the failure
+        if memory := options.pop('memory', None):
+            raise RuntimeError(f"{memory=} is not supported by this backend")
 
         unknown = set(options) - set(self.options)
         if unknown:

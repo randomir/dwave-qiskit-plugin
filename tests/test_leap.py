@@ -33,6 +33,7 @@ from dwave.gate.results import YieldHandling
 from qiskit import QuantumCircuit
 from qiskit.providers import JobError, JobStatus, JobTimeoutError
 from qiskit.providers.exceptions import QiskitBackendNotFoundError
+from qiskit.result import MeasLevel
 
 from dwave.plugins.qiskit import DWaveProvider
 from dwave.plugins.qiskit.leap import QCDLJob, QCDLResult, QCDLSimulatorBackend
@@ -313,6 +314,20 @@ def test_unknown_run_option_rejected():
     backend = QCDLSimulatorBackend(make_solver())
     with pytest.raises(AttributeError, match="num_reads"):
         backend.run(bell_circuit(), num_reads=100)
+
+
+def test_extra_run_options(monkeypatch):
+    backend = QCDLSimulatorBackend(make_solver())
+    patch_sample_qcdl(monkeypatch, backend.solver, [StubFuture()])
+
+    with pytest.raises(RuntimeError, match="memory"):
+        backend.run(bell_circuit(), memory=1)
+
+    with pytest.raises(RuntimeError, match="meas_level"):
+        backend.run(bell_circuit(), meas_level=MeasLevel.RAW)
+
+    job = backend.run(bell_circuit(), meas_level=MeasLevel.CLASSIFIED)
+    assert isinstance(job, QCDLJob)
 
 
 def test_run_rejects_non_circuit_input():
