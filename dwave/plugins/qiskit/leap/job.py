@@ -178,8 +178,18 @@ class QCDLJob(JobV1):
                             counts=counts,
                             raw_counts=raw_counts,
                             post_selection_yield=post_selection_yield,
+                            yield_handling=self._yield_handling,
+                            metadata={
+                                **metadata.qiskit_header,
+                                **metadata.circuit_metadata,
+                            }
                         ),
-                        header=metadata.qiskit_header,
+                        header={
+                            **metadata.qiskit_header,
+                            "metadata": {
+                                **metadata.circuit_metadata,
+                            },
+                        }
                     )
                 )
 
