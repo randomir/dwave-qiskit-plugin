@@ -470,6 +470,34 @@ def test_result_circuits_packed_in_one_qcdl(monkeypatch):
     assert result.get_counts("bell2") == {"11": 4}
 
 
+def test_result_header_carries_circuit_metadata(monkeypatch):
+    # qiskit-experiments reads each experiment's `header["metadata"]`, along
+    # with `shots` and `meas_level`
+    backend = QCDLSimulatorBackend(make_solver())
+    answer = make_answer(4, {"0": (0, ["0", "1", "0", "1"]),
+                             "1": (1, ["0", "1", "0", "1"]),
+                             "2": (0, ["1", "1", "1", "1"]),
+                             "3": (1, ["1", "1", "1", "1"])}, num_qubits=2)
+    patch_sample_qcdl(monkeypatch, backend.solver, [done_future(answer)])
+
+    bell1 = bell_circuit("bell1")
+    bell1.metadata = {"xval": 0.1, "composite_index": [0]}
+    bell2 = bell_circuit("bell2")   # no metadata set
+
+    result = backend.run([bell1, bell2]).result()
+
+    header = result.results[0].header
+    assert header["name"] == "bell1"
+    assert header["memory_slots"] == 2
+    assert header["creg_sizes"] == [["c", 2]]
+    assert header["metadata"] == {"xval": 0.1, "composite_index": [0]}
+    assert result.results[1].header["metadata"] == {}
+    assert result.results[0].meas_level == MeasLevel.CLASSIFIED
+
+    # circuit metadata lives in the header only, not in the experiment data
+    assert "metadata" not in result.data(0)
+
+
 def test_result_multiple_qcdls(monkeypatch):
     backend = QCDLSimulatorBackend(make_solver())
     answer1 = make_answer(2, {"0": (0, ["0", "0"]), "1": (1, ["0", "0"])}, num_qubits=2)
