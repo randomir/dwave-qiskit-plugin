@@ -129,8 +129,8 @@ DWaveProvider
 ``DWaveProvider`` exposes D-Wave's Leap QCDL simulator solvers
 through the standard Qiskit provider/backend interface: circuits passed to
 ``QCDLSimulatorBackend.run()`` are translated to QCDL, submitted to a Leap solver,
-and the answers are returned as a ``qiskit.result.Result``. Leap credentials are
-picked up from the standard `dwave-cloud-client configuration
+and the answers are returned in ``QCDLResult``, a ``qiskit.result.Result`` subclass.
+Leap credentials are picked up from the standard `dwave-cloud-client configuration
 <https://docs.dwavequantum.com/en/latest/ocean/api_ref_cloud/config.html>`_
 (configuration file or environment variables), or can be passed to the
 provider directly.
@@ -158,13 +158,13 @@ Run a Bell state circuit on a Leap QCDL solver:
     {'00': 512, '11': 488}
 
 ``run()`` also accepts a list of circuits; by default they are packed into as
-few QCDL programs as estimated to fit (disable with ``qcdl_pack_target=False``
+few QCDL programs as estimated to fit (disable with ``pack_qcdls=False``
 to submit one QCDL program per circuit).
 
 Installation
 ============
 
-Compatible with Python 3.11+, `Qiskit <https://github.com/Qiskit/qiskit>`_ 1.0+,
+Compatible with Python 3.11+, `Qiskit <https://github.com/Qiskit/qiskit>`_ 2.0+,
 `qiskit-optimization <https://github.com/qiskit-community/qiskit-optimization>`_ 0.7+,
 and `Ocean <https://github.com/dwavesystems/dwave-ocean-sdk>`_'s dwave-system 1.20+.
 
