@@ -1,4 +1,4 @@
-# Copyright 2020 D-Wave Systems Inc.
+# Copyright 2026 D-Wave
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,12 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .leap import DWaveProvider
-from .minimum_eigen_solvers import DWaveMinimumEigensolver
+from dwave.plugins.qiskit.leap.backend import QCDLSimulatorBackend
+from dwave.plugins.qiskit.leap.job import QCDLJob
+from dwave.plugins.qiskit.leap.provider import DWaveProvider
+from dwave.plugins.qiskit.leap.result import QCDLResult
 
-__all__ = [
-    'DWaveMinimumEigensolver',
-    'DWaveProvider',
-]
-
-__version__ = '0.1.0'
+__all__ = ["DWaveProvider", "QCDLJob", "QCDLResult", "QCDLSimulatorBackend"]
